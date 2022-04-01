@@ -1,0 +1,226 @@
+---
+title: "Tarea 1; tema 5"
+subtitle: "Modelos aditivos y de suavizado"
+author: "Zuri Montalar Mendoza"
+date: "24/5/2020"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE,error = FALSE, comment = "")
+```
+
+```{r include=FALSE}
+setwd("~/BIOESTADÍSTICA máster/IV. Modelización avanzada/Modelos aditivos y suavizado/Sesión7- 18 mayo.MAS/material tarea")
+```
+
+**En el fichero *COVID19CV.xls* se presenta información sobre la expansión de la COVID-19 en la Comunidad Valenciana. Concretamente, se presenta la información del número de casos confirmados, las hospitalizaciones, los ingresos en UCI y fallecidos, por la enfermedad, en el período 17 de marzo - 29 de marzo. Además, las fechas, se agrupan por semana, y se indica si está localizada en fin de semana, o no.**
+
+Primero cargamos y preparamos los datos, así como las librerías que vamos a utilizar.
+```{r warning = FALSE,error = FALSE, message=FALSE}
+datos<-readxl::read_excel("COVID19CV.xls")
+names(datos)[1]<-"dia"
+datos$semana<-as.factor(datos$semana)
+datos$finde<-as.factor(datos$finde)
+library(mgcv)
+```
+
+
+## Ejercicio 1
+**Realiza un análisis descriptivo para cada semana. A la vista de este análisis descriptivo, ¿consideras que la variable semana es explicativa?**
+
+Pese a disponer únicamente de 13 observaciones y que todas las variables cuantitativas sean discretas, pensamos que puede ser útil visualizar los datos según la semana con diagramas de cajas y bigotes:
+
+```{r fig.width=12,fig.height=5}
+par(mfrow=c(1,4))
+boxplot(Casos~semana,data=datos,col=2:3)
+boxplot(Muertes~semana,data=datos,col=2:3)
+boxplot(UCI~semana,data=datos,col=2:3)
+boxplot(Hospitalizaciones~semana,data=datos,col=2:3)
+par(mfrow=c(1,1))
+```
+
+Vemos que por lo general hay menos casos, muertes, personas en UCI y hospitalizadas en la semana 1 que en la semana 2. También vemos que los datos de casos y hospitalizaciones presentan menos variabilidad en la semana 1 que en la semana 2.
+
+```{r fig.width=13,fig.height=6}
+par(mfrow=c(1,3))
+plot(Muertes~Casos,data=datos[datos$semana==1,],pch=16,col=2,
+     ylim=c(0,45),xlim=c(180,750))
+points(Muertes~Casos,data=datos[datos$semana==2,],pch=16,col=3)
+legend("bottomright",col=2:3,pch=16,cex=1.7,
+      legend=c("Semana 1","Semana 2"))
+plot(Muertes~UCI,data=datos[datos$semana==1,],pch=16,col=2,
+     ylim=c(0,45),xlim=c(10,40))
+points(Muertes~UCI,data=datos[datos$semana==2,],pch=16,col=3)
+legend("bottomright",col=2:3,pch=16,cex=1.7,
+      legend=c("Semana 1","Semana 2"))
+plot(Muertes~Hospitalizaciones,data=datos[datos$semana==1,],pch=16,col=2,
+     ylim=c(0,45),xlim=c(20,275))
+points(Muertes~Hospitalizaciones,data=datos[datos$semana==2,],pch=16,col=3)
+legend("bottomright",col=2:3,pch=16,cex=1.7,
+      legend=c("Semana 1","Semana 2"))
+par(mfrow=c(1,1))
+```
+
+Caundo representamos los fallecimientos según las distintas covariables, distinguiendo si los datos corresponden a la semana 1 o a la 2, también observamos esa diferencia entre ambas semanas.
+
+Con todo ello, sí vemos que el comportamiento es distinto entre la semana 1 y la semana 2, por lo que sí podríamos plantearnos el considerar la variable *semana* como explicativa.
+
+## Ejercicio 2
+**Considerando un modelo lineal generalizado (GLM), explica las muertes, causadas por la enfermedad, a partir de las hospitalizaciones y los ingresos en UCI. ¿Consideras que sería mejor explicar las muertes con sólo los ingresos en UCI? Justifica tu respuesta. Con el modelo elegido, dibuja los valores reales (de las muertes) versus los valores pronosticados.**
+
+Como la variable respuesta, *Muertes*, son conteos, indicamos que se distribuye con una Poisson. Ya conociendo los posibles problemas que podríamos tener si en este caso utilizásemos la identidad como función de enlace (como que el error no siga una distribución Normal o que la varianza de la variable respuesta no sea constante), decidimos utilizar el link logaritmo, como es habitual en una regresión Poisson.
+
+Creamos el modelo *mod.2.1*, que explica las muertes a partir de las hospitalizaciones y los ingresos en UCI; y *mod.2.2*, que no considera la variable *Hospitalizaciones*:
+
+```{r}
+mod.2.1<-glm(Muertes~Hospitalizaciones+UCI,data=datos,family=poisson(link=log))
+mod.2.2<-glm(Muertes~UCI,data=datos,family=poisson(link=log))
+```
+
+```{r}
+summary(mod.2.1);
+summary(mod.2.2);
+1-pchisq(mod.2.2$deviance-mod.2.1$deviance,mod.2.2$df.residual-mod.2.1$df.residual)
+```
+
+En ambos modelos, todos los coeficientes son significativos. Tenemos tanto menor AIC como menor Deviance residual en el modelo que sí incluye el número de hospitalizaciones, y al realizar el test $\chi^2$ obtenemos que la diferencia de deviances entre los modelos sí es significativa, y por tanto consideramos que sería mejor explicar las muertes tanto con las hospitalizaciones como con los ingresos en UCI.
+
+Veamos si el modelo *mod.2.1* cumple las validaciones necesarias:
+```{r fig.width=12,fig.height=5}
+par(mfrow=c(2,2));plot(mod.2.1,residuals=TRUE,pch=20);par(mfrow=c(1,1))
+# Comprobamos normalidad de los residuos
+shapiro.test(residuals(mod.2.1,type ="deviance"))
+```
+
+Con un p-valor de 0.425 en el test de Shapiro para evaluar la normalidad de los residuos de este modelo, no tenemos evidencia estadística suficiente como para decir que no se cumple esa normalidad. Esto también lo podemos ver en el gráfico Q-Q.
+
+Según el gráfico superior izquierdo, en el que están representados los residuos frente a los valores predichos, podríamos decir que también se cumple la homocedasticidad de varianzas, pues se mantiene más o menos constante.
+
+A continuación, representamos los valores pronosticados de las muertes con ese modelo *mod.2.1* frente a los valores reales de las mismas:
+
+```{r fig.width=4,fig.height=4,fig.align="center"}
+plot(datos$Muertes,mod.2.1$fitted.values,pch=20,ylab="Valores ajustados",
+     xlab="Valores reales",main="Fallecimientos")
+abline(0,1,col=2)
+```
+
+
+## Ejercicio 3
+**Suaviza las covariables consideradas en el modelo elegido. ¿Consideras que es necesaria esta suavización? Justifica tu respuesta.**
+
+Para crear los modelos aditivos generalizados recurriremos a la función `gam()` del paquete *mgcv* que ya conocemos. Además, hemos visto en las prácticas anteriores que las bases de *splines* escogidas en principio no influyen considerablemente en los resultados, por lo que en este caso escogemos utilizar durante todo el trabajo la base de *splines* cúbicos en todas las funciones de suavizado que creemos (lo indicaremos con el argumento *bs="cr"* en la función `s()`). De forma similar, también hemos visto que en este caso funciona adecuadamente utilizar esas bases de dimensión 3, pues tenemos pocos datos (13 observaciones), y decidimos considerar ese valor en todas las funciones de suavizado que realicemos (lo indicaremos con el argumento *k=3* en la función `s()`).
+
+```{r}
+mod.3<-gam(Muertes~s(Hospitalizaciones,bs="cr",k=3)+s(UCI,bs="cr",k=3),
+           data=datos,family=poisson(link=log))
+summary(mod.3); mod.3$aic
+```
+
+Para estudiar si es necesaria la suavización de las covariables, podemos fijarnos en los grados de libertad efectivos (edf) asociados al suavizado de cada una de ellas. Cuando estos valores de edf son cercanos a 1, tenemos que no es necesario el suavizado de la covariable correspondiente, sino que sería más adecuado recurrir a la forma paramétrica. En nuestro modelo *mod.3*, los grados de libertad efectivos asociados a s(Hospitalizaciones) y s(UCI) son, respectivamente, 1.847 y 1.766, por lo que de utilizar esas variables, pensamos que sí sería necesario suavizarlas.
+
+Podemos ver que el suavizado de la covariable *Hospitalizaciones* es claramente significativo (con un p-valor de 0.00412), mientras que el de *UCI* podría serlo o no según el nivel de significatividad que estemos utilizando, siendo el p-valor de 0.04154. Por eso mismo, en el siguiente ejercicio compararemos este modelo con el que no considera la variable *UCI*.
+
+```{r fig.width=12,fig.height=4,fig.align="center"}
+plot(mod.3,residuals=TRUE,pch=20,pages=1)
+```
+
+En las gráficas anteriores vemos que el modelo no se ajusta bien a los datos, pues residuos parciales no están distribuidos uniformemente alrededor de la curva a la que se relacionan.
+
+```{r fig.width=12,fig.height=6}
+par(mfrow=c(2,2));gam.check(mod.3,pages=1);par(mfrow=c(1,1))
+```
+
+En cuanto al análisis de los residuos, no resulta del todo esclarecedor si se da la homocedasticidad de varianzas (observando el gráfico superior derecho del conjunto de gráficas anterior); y observando el gráfico Q-Q tampoco podemos afirmar con certeza que los residuos sean normales.
+
+
+## Ejercicio 4
+**Considerando un modelo aditivo generalizado (GAM), explica las muertes, causadas por la enfermedad, a partir de un suavizado de las hospitalizaciones y un suavizado de los ingresos en UCI. ¿Consideras que sería mejor explicar las muertes con sólo el suavizado de las hospitalizaciones? Justifica tu respuesta.**
+
+A continuación, nos planteamos un nuevo modelo que explique las muertes, pero a partir únicamente de un suavizado de las hospitalizaciones.
+
+```{r}
+mod.4<-gam(Muertes~s(Hospitalizaciones,bs="cr",k=3),
+             data=datos,family=poisson(link=log))
+summary(mod.4); mod.4$aic
+1-pchisq(mod.4$deviance-mod.3$deviance,mod.4$df.residual-mod.3$df.residual)
+```
+
+En el modelo *mod.4* tenemos (aunque los valores son bastante similares) mayores valores de AIC y GCV, así como menores R^2^~ajustado~ y deviance explicada que en el modelo que incluía el suavizado de ambas variables. Además, contrastando con una prueba $\chi^2$ si la diferencia de Deviances entre este modelo y el modelo *mod.3* es significativa, obtenemos un p-valor de 0.02803805, por lo que en este caso también podríamos considerar que la diferencia de Deviances es o no significativa según el nivel de significatividad escogido.
+
+En la siguiente gráfica observamos que los residuos parciales tampoco parecen estar generalmente distribuidos de manera uniforme alrededor de la curva a la que se relacionan, lo cual nos hace también pensar que este modelo tampoco sea del todo adecuado.
+
+```{r fig.width=4,fig.height=4,fig.align="center"}
+plot(mod.4,residuals=TRUE,pch=20)
+```
+
+```{r fig.width=12,fig.height=6}
+par(mfrow=c(2,2));gam.check(mod.4,pages=1);par(mfrow=c(1,1))
+```
+
+En cuanto al análisis de los residuos, observando el gráfico superior derecho del conjunto de gráficas anterior pensamos que, de no ser por el valor representado a la izquierda, sí parecería haber homocedasticidad de varianzas. Con el gráfico Q-Q y el histograma no podemos determinar con claridad si los residuos siguen o no una distribución Normal.
+
+Con todo ello, pensamos que sería mejor explicar las muertes directamente sin utilizar la variable *UCI*, ya que no resulta muy significativa, y no hay grandes diferencias entre considerar o no esa variable explicativa.
+
+## Ejercicio 5
+**En el modelo elegido en la cuestión anterior, introduce la variable *finde* como un factor aleatorio. Analiza su significatividad. Con este modelo, considerando la variable *finde* como factor aleatorio, dibuja los valores reales (de las muertes) versus los valores pronosticados.**
+
+Para crear el modelo introduciendo la variable *finde* como un factor aleatorio, utilizaremos la función `gamm()`, también del paquete *mgcv*. Entonces, añadiendo el argumento *random=list(finde=~1)* estamos indicando que considere el factor aleatorio del fin de semana sobre el intercepto.
+
+```{r message=FALSE}
+mod.5<-gamm(Muertes~s(Hospitalizaciones,bs="cr",k=3),random=list(finde=~1),
+           data=datos,family=poisson(link=log),verbosePQL=FALSE)
+summary(mod.5$lme)
+summary(mod.5$gam)
+```
+
+```{r fig.width=4,fig.height=4,fig.align="center"}
+plot(mod.5$gam,residuals=TRUE,pch=20)
+```
+
+En la gráfica anterior vemos que este modelo parece ajustarse mejor a los datos, pues residuos parciales están generalmente distribuidos uniformemente alrededor de la curva a la que se relacionan.
+
+A continuación, representamos los valores pronosticados de las muertes con este modelo frente a los valores reales de las mismas:
+
+```{r fig.width=4,fig.height=4,fig.align="center"}
+plot(datos$Muertes,mod.5$gam$fitted.values,pch=20,ylab="Valores ajustados",
+     xlab="Valores reales",main="Fallecimientos")
+abline(0,1,col=2)
+```
+
+Parece hemos conseguido mejorar un poco nuestras predicciones con este modelo en comparación con el modelo lineal generalizado del ejercicio 2 (*mod.2.1*, que utilizaba como covariables tanto *Hospitalizaciones* como *UCI*), pues ahora tenemos seis de los trece valores bastante cercanos a la línea roja, que sería la predicción perfecta de nuestros datos. Sin embargo, también deberíamos tener en cuenta que es predicción perfecta nos llevaría a estar sobreajustándonos a los datos, por lo que tampoco sería lo ideal.
+
+## Ejercicio 6
+**Repite la cuestión anterior, pero considerando la variable *finde* como factor fijo. Compara los resultados. ¿Qué consideras más adecuado, considerarla como factor fijo, o como aleatorio? Justifica tu respuesta.**
+
+Añadimos ahora la variable *finde* como un factor fijo en lugar de como un factor aleatorio:
+
+```{r}
+mod.6<-gam(Muertes~s(Hospitalizaciones,bs="cr",k=3)
+           +finde,data=datos,family=poisson(link=log))
+summary(mod.6); mod.6$aic
+```
+
+En el modelo del ejercicio anterior teníamos un R^2^~ajustado~ de 0.485, frente a uno de 0.644 que tenemos en este nuevo modelo, por lo que deducimos que se trata de un mejor modelo. También pensamos que es más adecuado considerar como fijo el efecto del fin de semana, porque en nuestros datos recogemos todos los posibles valores del mismo: o es fin de semana, o no lo es.
+
+
+```{r fig.width=4,fig.height=4,fig.align="center"}
+plot(mod.6,residuals=TRUE,pch=20)
+```
+
+```{r fig.width=12,fig.height=6}
+par(mfrow=c(2,2));gam.check(mod.6,pages=1);par(mfrow=c(1,1))
+```
+
+Tanto la normalidad como la homocedasticidad de los residuos de este modelo son similares a las obtenidas en los modelos de ejercicios anteriores, de modo que las gráficas representadas para evaluarlas no son del todo esclarecedoras.
+
+```{r fig.width=4,fig.height=4,fig.align="center"}
+plot(datos$Muertes,mod.6$fitted.values,pch=20,ylab="Valores ajustados",
+     xlab="Valores reales",main="Fallecimientos")
+abline(0,1,col=2)
+```
+
+Al representar los valores pronosticados de las muertes con este modelo frente a los valores reales de las mismas, parece que en general todos los valores se acerquen más a la línea de predicción perfecta, y por tanto tenemos mejores predicciones.
+

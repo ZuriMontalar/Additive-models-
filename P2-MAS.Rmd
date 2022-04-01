@@ -1,0 +1,344 @@
+---
+title: "Métodos de suavizado en regresión"
+subtitle: "Tarea 2; Tema 1"
+author: "Zuri Montalar"
+date: "17/4/2020"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE, warning=FALSE, error=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<div style="text-align: justify">
+
+**En el artículo de F.J. Basterra-Gortari, y colaboradores, publicado en 2017 en *Medicina Clínica*, 148(6): 250-256, se presenta la prevalencia (en %) de normopeso, sobrepeso y obesidad, en España, en adultos mayores de quince años.**
+
+**Dado que en el artículo citado trabajan con Encuestas Nacionales de Salud, no se dispone de información para los años 1994, 1996, 1998, 1999, 2000, 2002, 2004. Se propone estimar la prevalencia de normopeso, sobrepeso y obesidad en estos años en los que no está disponible.**
+
+**Siendo $N_i$, $S_i$ y $O_i$ la prevalencia de normopeso, sobrepeso y obesidad, respectivamente; y $t_i$ la variable tiempo, se aplicarán distintos métodos a los siguientes modelos:**
+
+$N_i=f(t_i)+\epsilon_i~;~~S_i=f(t_i)+\epsilon_i~;~~O_i=f(t_i)+\epsilon_i$
+
+```{r fig.width=12,fig.height=5}
+# Datos
+t<-c(1993,1995,1997,2001,2003,2005) # Variable explicativa
+Normopeso<-c(52.9,52.1,51.1,49.7,50.7,48.1) # Variable respuesta
+Sobrepeso<-c(37.1,36.5,36.1,37.0,36.0,36.8) # Variable respuesta
+Obesidad<-c(10.0,11.4,12.8,13.3,13.3,15.1) # Variable respuesta
+
+tt<-min(t):max(t) # Vector de años para los que queremos predecir
+tt.df<-tt
+tt.df<-data.frame(t=tt.df)  # Dataframe de años para los que queremos predecir
+
+# Representación gráfica de los datos
+plot(t,Normopeso,col=2,ylim=c(5,55),ylab="prevalencia (%)",xlab="año",pch=16)
+points(t,Sobrepeso,col=3,pch=16)
+points(t,Obesidad,col=4,pch=16)
+```
+
+
+Los métodos que utilizaremos son los siguientes: regresión polinomial local (tanto lineal como cuadrática), suavizado *kernel*, *splines* de regresión, *splines* cúbicos naturales, y *splines* de suavizado.
+
+Para cada uno de los métodos, representaremos gráficamente la prevalencia (en porcentaje) de Normopeso, Sobrepeso y Obesidad de los años en los que disponemos datos, en puntos (rellenos) rojos, verdes y azules respectivamente; y además incluiremos las predicciones para todo el rango de valores (esto es, desde 1993 hasta 2005), en puntos sin relleno. Como se trata de porcentaje de prevalencia, las predicciones de Normopeso, Sobrepeso y Obesidad han de sumar 100. Haremos y mostraremos la suma de las tres en todas las predicciones y en caso de diferir (que no sumen 100), mostraremos para Obesidad en gris las predicciones realizadas con el método de predicción correspondiente, y en azul las predicciones calculadas como 100 menos la suma de las predicciones de Normopeso y Sobrepeso. 
+
+## Regresión polinomial local
+
+Tal como vimos en la práctica anterior, la estrategia de regresión polinomial local consiste en dividir el dominio de interés en intervalos contiguos (ventanas), de modo que representaremos la función $f(\cdot)$ partiendo de un polinomio diferente en cada uno de esos intervalos, empleando para crear esos polinomios una familia paramétrica (utilizaremos regresión lineal y cuadrática en este caso), de manera local. Además, para crear esa regresión local, se le da más importancia, peso, a los datos del entorno del punto de interés más próximos al mismo. Con todo ello, la curva de la función $f(\cdot)$ se crea con la unión entre los puntos que en cada ventana corresponden a los puntos de interés ($x$) y sus valores ajustados con la regresión. 
+
+Para realizar la regresión polinomial local, tanto lineal como cuadrática, utilizaremos la función `loess.as()` del paquete *fANCOVA* (en lugar de las funciones `lowess()` y `loess()`), pues esta realiza una selección automática del parámetro de suavizado, pudiendo en el argumento *criterion* elegir que el criterio de esa selección sea a través del AIC corregido (este es el que decidimos utilizar), o por validación cruzada generalizada. Con el argumento *degree* podemos indicar el grado del polinomio que ajusta en las ventanas, que por defecto es 1, haciendo por tanto el ajuste localmente lineal; e indicando *degree*=2 realiza entonces el ajuste localmente cuadrático.
+
+```{r message=FALSE}
+library(fANCOVA)
+```
+
+\newpage
+
+#### Ajuste localmente lineal \newline
+$~$
+
+```{r warning=FALSE, error=FALSE,fig.width=12,fig.height=5}
+plot(t,Normopeso,main="Ajuste localmente lineal",ylab="prevalencia (%)",
+     xlab="año",col=2,ylim=c(5,55),pch=16)
+plln<-predict(loess.as(t,Normopeso,degree=1,criterion="aicc"),newdata=tt)
+points(tt,plln,col=2)
+
+points(t,Sobrepeso,col=3,pch=16)
+plls<-predict(loess.as(t,Sobrepeso,degree=1,criterion="aicc"),newdata=tt)
+points(tt,plls,col=3)
+
+points(t,Obesidad,col=4,pch=16)
+pllo<-predict(loess.as(t,Obesidad,degree=1,criterion="aicc"),newdata=tt)
+# points(tt,pllo,col=8)
+points(tt,100-(plln+plls),col=4)
+plln+plls+pllo
+```
+
+#### Ajuste localmente cuadrático \newline
+$~$
+
+```{r warning=FALSE, error=FALSE,fig.width=12,fig.height=5}
+plot(t,Normopeso, main="Ajuste localmente cuadrático",
+     ylab="prevalencia (%)",xlab="año",col=2,ylim=c(5,55),pch=16)
+plcn<-predict(loess.as(t,Normopeso,degree=2,criterion="aicc"),newdata=tt)
+points(tt,plcn,col=2)
+
+points(t,Sobrepeso,col=3,pch=16)
+plcs<-predict(loess.as(t,Sobrepeso,degree=2,criterion="aicc"),newdata=tt)
+points(tt,plcs,col=3)
+
+points(t,Obesidad,col=4,pch=16)
+plco<-predict(loess.as(t,Obesidad,degree=2,criterion="aicc"),newdata=tt)
+# points(tt,plco,col=8)
+points(tt,100-(plcn+plcs),col=4)
+plcn+plcs+plco
+```
+
+## Suavizado *kernel*
+
+La estrategia del suavizado *kernel* consiste también en dividir el dominio de interés en intervalos contiguos (ventanas) centrados en puntos de interés ($x$'s), de modo que la función $f(\cdot)$ se crea a partir de la unión de los puntos formados por cada punto de interés y su respectivo valor estimado, $\hat{f}(x)$. Sin embargo, en este caso esos valores estimados corresponden, en cada ventana de suavizado, al promedio ponderado de los valores de $y$ de los puntos que conforman la ventana. Además, esa ponderación viene controlada por la función de pesos, o *Kernel*, $K(\cdot)$, que se elije de forma que se le de más importancia a las observaciones cercanas al punto de interés sobre el que se realiza el ajuste. 
+
+Para implementar el suavizado *kernel* utilizamos la función `ksmooth()`. Utilizaremos la función *kernel* por defecto en esta función, que es la Gausiana (aunque en principio no son grandes las diferencias entre utilizar una función *kernel* u otra). Como no sabemos qué ancho de ventana utilizar, hacemos varias pruebas, tal como vemos en las tres siguientes gráficas.
+
+```{r warning=FALSE, error=FALSE,fig.width=12,fig.height=5}
+plot(t,Normopeso, main="Suavizado Kernel - Normopeso", ylab="prevalencia (%)",
+     xlab="año",col=1,pch=16) 
+hh<-c(3,2.5,2,1.5,1)
+for (i in 1:length(hh))
+lines(ksmooth(t,Normopeso,kernel="normal",bandwidth=hh[i]),col=i+1,lwd=2)
+points(t,Normopeso,pch=16) # marcamos los puntos de nuevo para visualizarlos mejor
+legend("bottomleft",
+      legend=paste("bandwidth = ",hh),
+      col=2:(length(hh)+1),lwd=2,cex=0.9,bty="n")
+
+plot(t,Sobrepeso, main="Suavizado Kernel - Sobrepeso", ylab="prevalencia (%)",
+     xlab="año",col=1,pch=16) 
+hh<-c(3,2.5,2,1.5,1)
+for (i in 1:length(hh))
+lines(ksmooth(t,Sobrepeso,kernel="normal",bandwidth=hh[i]),col=i+1,lwd=2)
+points(t,Sobrepeso,pch=16) # marcamos los puntos de nuevo para visualizarlos mejor
+legend("bottomleft",
+      legend=paste("bandwidth = ",hh),
+      col=2:(length(hh)+1),lwd=2,cex=0.9,bty="n")
+
+plot(t,Obesidad, main="Suavizado Kernel - Obesidad", ylab="prevalencia (%)",
+     xlab="año",col=1,pch=16) 
+hh<-c(3,2.5,2,1.5,1)
+for (i in 1:length(hh))
+lines(ksmooth(t,Obesidad,kernel="normal",bandwidth=hh[i]),col=i+1,lwd=2)
+points(t,Obesidad,pch=16) # marcamos los puntos de nuevo para visualizarlos mejor
+legend("bottomright",
+      legend=paste("bandwidth = ",hh),
+      col=2:(length(hh)+1),lwd=2,cex=0.9,bty="n")
+```
+
+
+Vemos que un *bandwidth* entre 1 y 3 nos podría servir. No buscamos que proporcione ajustes con menor suma de cuadrados residual con los datos que tenemos, pues podríamos estar sobre-estimando, como tal vez pase con valores de *bandwidth* de 3 o superiores. Sin embargo, sí queremos realizar buenas estimaciones, y por tanto sí nos fijaremos en que no haya mucha diferencia entre los valores ajustados y los datos proporcionados. Consideramos entonces a la vista de los gráficos que podríamos considerar un *bandwidth* de 2 para las predicciones de Normopeso, Sobrepeso y Obesidad.
+
+Con el argumento *n.points* podemos indicar la cantidad de puntos para los que queremos predecir, de modo que esta función predice para esa cantidad de x's (años en este caso) equiespaciados en el rango de los valores de x's con los que hace el ajuste. 
+
+```{r warning=FALSE, error=FALSE,fig.width=12,fig.height=5}
+plot(t,Normopeso, main="Suavizado Kernel",
+     ylab="prevalencia (%)",xlab="año",col=2,ylim=c(5,55),pch=16)
+pskn<-ksmooth(t,Normopeso,kernel="normal",bandwidth =2,n.points=length(tt))
+points(pskn,col=2)
+
+points(t,Sobrepeso,col=3,pch=16)
+psks<-ksmooth(t,Sobrepeso,kernel="normal",bandwidth =2,n.points=length(tt))
+points(psks,col=3)
+
+points(t,Obesidad,col=4,pch=16)
+psko<-ksmooth(t,Obesidad,kernel="normal",bandwidth =2,n.points=length(tt))
+# points(psko,col=8)
+points(tt,100-(pskn$y+psks$y),col=4)
+pskn$y+psks$y+psko$y
+```
+
+## *Splines* de regresión
+
+La estrategia de *splines* de regresión también parte de dividir el dominio de interés en regiones, pero en esta ocasión son fijas. Los puntos que dividen las regiones son los nodos, y para aproximar la función $f(\cdot)$ se ajusta en cada región una función polinómica. Para ello, se tienen en cuenta una serie de restricciones que hacen que los extremos de cada función se  aproximen a los de las funciones de las regiones colindantes, además de que las d-derivadas de los polinomios sean continuas en los puntos de corte, conseguiendo así que el modelo final sea una curva continua. De forma general, podemos representar un spline como $\sum_j\beta_jb_j(x)$, siendo $b_j(x)$ la base del spline. En este caso entonces son los nodos quienes marcan el grado de suavizado: tanto su posición (que se suele escoger equidistante), como la cantidad de nodos (que influirá en el suavizado en mayor medida).
+
+Utilizamos la función `bs()` del paquete *splines* , que genera la matriz de la base *B-splines* para un *spline* polinómico del grado que se indique en el argumento *degree*. Nosotros lo haremos con polinomios de grado 3, que son los que esta función realiza por defecto. Además, como solo disponemos de seis datos de cada variable respuesta, no tendríamos buenos resultados escogiendo más de tres nodos. Los grados de libertad son el grado del polinomio que ajusta en las regiones (es decir, 3 en el caso de *splines* cúbicos) más el número de nodos. Decidimos realizar las predicciones con 1 y 2 nodos equdistribuídos (indicando entonces en el argumento *df*, 4 y 5 grados de libertad, respectivamente), y se pueden observar en las dos siguientes gráficas.
+
+```{r warning=FALSE, error=FALSE,fig.width=12,fig.height=5}
+library(splines)
+
+# spline cúbico, 1 nodo
+plot(t,Normopeso, main="Splines cúbicos, 1 nodo",
+     ylab="prevalencia (%)",xlab="año",col=2,ylim=c(5,55),pch=16)
+pscn1<-predict(lm(Normopeso ~ bs(t,df=4,degree=3)),newdata=tt.df)
+points(tt.df$t,pscn1,col=2)
+
+points(t,Sobrepeso,col=3,pch=16)
+pscs1<-predict(lm(Sobrepeso ~ bs(t,df=4,degree=3)),newdata=tt.df)
+points(tt.df$t,pscs1,col=3)
+
+points(t,Obesidad,col=4,pch=16)
+psco1<-predict(lm(Obesidad ~ bs(t,df=4,degree=3)),newdata=tt.df)
+# points(tt.df$t,psco1,col=8)
+points(tt,100-(pscn1+pscs1),col=4)
+pscn1+pscs1+psco1
+
+# spline cúbico, 2 nodos equidistribuídos
+plot(t,Normopeso, main="Splines cúbicos, 2 nodos equdistribuídos",
+     ylab="prevalencia (%)",xlab="año",col=2,ylim=c(5,55),pch=16)
+pscn2<-predict(lm(Normopeso ~ bs(t,df=5,degree=3)),newdata=tt.df)
+points(tt.df$t,pscn2,col=2)
+
+points(t,Sobrepeso,col=3,pch=16)
+pscs2<-predict(lm(Sobrepeso ~ bs(t,df=5,degree=3)),newdata=tt.df)
+points(tt.df$t,pscs2,col=3)
+
+points(t,Obesidad,col=4,pch=16)
+psco2<-predict(lm(Obesidad ~ bs(t,df=5,degree=3)),newdata=tt.df)
+# points(tt.df$t,psco2,col=8)
+points(tt,100-(pscn2+pscs2),col=4)
+pscn2+pscs2+psco2
+```
+
+Vemos que los resultados utilizando uno y dos nodos son muy similares.
+
+### *Splines* cúbicos naturales
+
+Los *splines* pueden tener mucha varianza en los extremos del rango de valores disponibles de la variable explicativa, lo que provoca que no sea una buena estrategia para la extrapolación. Como alternativa, se presentan los *splines* cúbicos naturales, que tienen la linealidad en los extremos como restricción adicional. Así, en la primera y última región, se realiza un ajuste lineal, y en el resto de regiones delimitadas por los nodos, ajustes cúbicos.
+
+En este caso, no estamos extrapolando sino interpolando, pues pretendemos predecir para años faltantes dentro del rango de los años que disponemos (esto es, entre 1993 y 2005). Entonces, no sería necesario utilizar los *splines* cúbicos naturales para mejorar las predicciones, y lo que esperamos ver es que no haya grandes diferencias al utilizar esta estrategia.
+
+En R, podemos utilizar la función `ns()`, también del paquete *splines*, que genera la matriz de la base *B-splines* para un *spline* cúbico natural. Los grados de libertad son 1 más el nº de nodos, y decidimos realizar predicciones con *splines* cúbicos naturales con 2 y 3 nodos equidistribuídos, las cuales mostramos en las dos siguientes gráficas.
+
+```{r fig.width=12,fig.height=5}
+# Splines cúbicos naturales, 2 nodos equdistribuídos
+plot(t,Normopeso, main="Splines cúbicos naturales, 2 nodos equdistribuídos",
+     ylab="prevalencia (%)",xlab="año",col=2,ylim=c(5,55),pch=16)
+pscnn1<-predict(lm(Normopeso ~ ns(t,df=3)),newdata=tt.df)
+points(tt.df$t,pscnn1,col=2)
+
+points(t,Sobrepeso,col=3,pch=16)
+pscns1<-predict(lm(Sobrepeso ~ ns(t,df=3)),newdata=tt.df)
+points(tt.df$t,pscns1,col=3)
+
+points(t,Obesidad,col=4,pch=16)
+pscno1<-predict(lm(Obesidad ~ ns(t,df=3)),newdata=tt.df)
+# points(tt.df$t,pscno1,col=8)
+points(tt,100-(pscnn1+pscns1),col=4)
+pscnn1+pscns1+pscno1
+
+# Splines cúbicos naturales, 3 nodos equdistribuídos
+plot(t,Normopeso, main="Splines cúbicos naturales, 3 nodos equdistribuídos",
+     ylab="prevalencia (%)",xlab="año",col=2,ylim=c(5,55),pch=16)
+pscnn2<-predict(lm(Normopeso ~ ns(t,df=4)),newdata=tt.df)
+points(tt.df$t,pscnn2,col=2)
+
+points(t,Sobrepeso,col=3,pch=16)
+pscns2<-predict(lm(Sobrepeso ~ ns(t,df=4)),newdata=tt.df)
+points(tt.df$t,pscns2,col=3)
+
+points(t,Obesidad,col=4,pch=16)
+pscno2<-predict(lm(Obesidad ~ ns(t,df=4)),newdata=tt.df)
+# points(tt.df$t,pscno2,col=8)
+points(tt,100-(pscnn2+pscns2),col=4)
+pscnn2+pscns2+pscno2
+```
+
+En este caso, los resultados utilizando dos y tres nodos también son muy similares. Sin embargo, si nos fijamos en los años en los que teníamos datos de partida, vemos que la predicción con *splines* cúbicos naturales en esos años es más similar a los valores originales en las tres variables respuesta, al utilizar tres nodos que al utilizar dos. Esta diferencia quedará reflejada más adelante cuando calculemos las RSS de cada una de las estrategias.
+
+
+## *Splines* de suavizado
+
+El objetivo  de la estrategia de *splines* de suavizado es obtener un ajuste que minimice la suma de los residuos al cuadrado ($RSS=\sum_{i=1}^n(y_i-\hat{f}(x_i))^2$) pero que sea suave, sin sobre-ajustarse a los datos ni ser demasiado flexible, y la forma de llevarlo a cabo es encontrar la función $\hat{f}(\cdot)$ que minimice: $RSS+\lambda\int\hat{f}''(t)^2dt$.
+
+$\lambda$ es el parámetro de suavizado, y penaliza la variabilidad en $f(\cdot)$, de modo que si $\lambda=0$, el término de penalización no tiene efecto; y en cuanto mayor sea su valor, más suave o menos variable será la función.
+
+Podemos implementar esta estrategia en R mediante la función `smooth.spline()`, del paquete *stats*. Indicando como *TRUE* el argumento *cv*, la función obtendrá el valor de $\lambda$ óptima por validación cruzada, y lo utilizará para realizar el ajuste.
+
+```{r fig.width=12,fig.height=5}
+plot(t,Normopeso, main="Splines de suavizado",
+     ylab="prevalencia (%)",xlab="año",col=2,ylim=c(5,55),pch=16)
+pssn<-predict(smooth.spline(Normopeso ~ t,cv=TRUE),tt)
+points(pssn,col=2)
+
+points(t,Sobrepeso,col=3,pch=16)
+psss<-predict(smooth.spline(Sobrepeso ~ t,cv=TRUE),tt)
+points(psss,col=3)
+
+points(t,Obesidad,col=4,pch=16)
+psso<-predict(smooth.spline(Obesidad ~ t,cv=TRUE),tt)
+points(psso,col=8)
+points(tt,(100-(pssn$y+psss$y))->psso2,col=4)
+pssn$y+psss$y+psso$y
+```
+
+Esta es la única de las ocasiones en que las predicciones realizadas con la estrategia para Obesidad no suman 100 junto a Normopeso y Sobrepeso. Tal como hemos comentado, en el gráfico vemos para Obesidad en gris las predicciones realizadas con el método de *splines* de suavizado, y en azul las predicciones calculadas como 100 menos la suma de las predicciones de Normopeso y Sobrepeso.
+
+------------------------------------------
+
+## Valoración de las predicciones según las distintas estrategias
+
+Podríamos calcular la suma de cuadrados residual (RSS) en cada una de las predicciones realizadas:
+
+```{r warning=FALSE, error=FALSE}
+# 'dat' contiene los datos iniciales almacenados en un data.frame
+dat<-data.frame(Normopeso=Normopeso,Sobrepeso=Sobrepeso,Obesidad=Obesidad) 
+
+# 'preds' contiene todas las predicciones con todas las estrategias utilizadas
+preds<-matrix(c(plln,plls,pllo,plcn,plcs,plco,pskn$y,psks$y,psko$y,
+                 pscn1,pscs1,psco1,pscn2,pscs2,psco2,
+                 pscnn1,pscns1,pscno1,pscnn2,pscns2,pscno2,
+                 pssn$y,psss$y,psso2),nrow=length(tt))
+nombres.preds<-c("plln","plls","pllo","plcn","plcs","plco","pskn",
+                 "psks","psko","pscn1","pscs1","psco1","pscn2",
+                 "pscs2","psco2","pscnn1","pscns1","pscno1","pscnn2",
+                 "pscns2","pscno2","pssn","psss","psso")  # vector de nombres
+colnames(preds)<-nombres.preds
+
+pos<-c()                  # vector de posiciones del vector de tiempos 
+for (i in 1:length(t)) {  # tt en el que los años son únicamente los
+  pos[i]<-which(tt==t[i]) # años de los que tenemos datos de partida
+}   
+
+# Calculamos las RSS de cada estrategia
+noms<-c("localmente lineal ","localmente cuadrático ","suavizado kernel ",
+        "spline cúbico 1 nodo ","spline cúbico 2 nodos ","spline cúbico natural 2 nodos ",
+        "spline cúbico natural 3 nodos ","splines de suavizado ") # vector de nombres
+RSS<-matrix(ncol=3,nrow=length(noms))
+rownames(RSS)<-noms
+colnames(RSS)<-c("Normopeso","Sobrepeso","Obesidad")
+for (i in 1:(length(noms))){
+  for (j in 1:dim(dat)[2]){
+    RSS[i,j]<-sum((dat[,j]-preds[pos,j+(i-1)*dim(dat)[2]])**2)
+  }
+}
+(signif(RSS,3))
+```
+
+
+Todas las RSS obtenidas están entre aproximadamente 0 (la mínima obtenida es de 9.47e-30, correspondiente tanto a *spline* cúbico 2 con nodos como al ajuste localmente lineal de Obesidad), y 2.34, correspondiente este valor máximo a la RSS del ajuste de Normopeso con *splines* de suavizado. Con ello, podríamos decir que en todos los casos tenemos RSS's pequeñas, lo cual podría indicar que estamos frente a buenos ajustes con todas las estrategias y que todas las predicciones realizadas podrían ser válidas.
+
+Vemos que mediante las estrategias de regresión polinomial local (tanto lineal como cuadrática), suavizado *kernel* y *spline* cúbico con 2 nodos, las RSS para las tres variables respuesta son prácticamente nulas, inferiores a 0.01 (en la gráfica que vemos a continuación están superpuestas y distinguimos únicamente las correspondientes a Obesidad). En principio esto nos puede llevar a pensar por tanto que esas son las mejores estrategias de predicción de entre las que hemos considerado. Sin embargo, deberíamos tener en cuenta que tal vez RSS's tan cercanas a 0 pueden ser indicio de que se esté produciendo sobre-ajuste con los datos, lo cual nos hace dudar de si esos ajustes servirían también partiendo de otros datos y de si las mejores estrategias para predecir son necesariamente aquellas con menor RSS.
+
+En cuanto a los mayores valores de RSS obtenidos para las tres variables respuesta a estudiar, vemos que corresponden a la estrategia de *splines* de suavizado, lo cual no nos sorprende, pues esta consiste en añadir un término de penalización precisamente para evitar ese sobre-ajuste. Tanto es así, que aún teniendo mayores RSS nos podríamos plantear si tal vez esta es en este caso la mejor de las estrategias utilizadas para predecir.
+
+También es cierto que únicamente partimos de seis datos de cada una de las variables respuesta, y pensamos que tal vez disponiendo de más datos iniciales podríamos contrastar los resultados obtenidos de forma más contundente.
+
+```{r warning=FALSE, error=FALSE,fig.height=6.5}
+# Representamos gráficamente los valores obtenidos de RSS
+par(mfrow=c(2,1))
+plot(RSS[,1],col=2,pch=17,main="RSS según la estrategia de predicción",
+     ylab="RSS",xaxt="n",xlab=NA,ylim=c(-0.1,2.5))
+mtext(text=noms,side=1,las=2,at=1:length(noms),cex=0.85)
+points(RSS[,2],col=3,pch=17)
+points(RSS[,3],col=4,pch=17)
+legend("topleft",col=2:4,pch=17,cex=0.85,
+      legend=c("Normopeso","Sobrepeso","Obesidad"))
+```
+
+
+
+
+
+
+
+
+

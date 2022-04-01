@@ -1,0 +1,237 @@
+---
+title: "Tarea 1; tema 6"
+subtitle: "Modelos aditivos y de suavizado"
+author: "Zuri Montalar Mendoza"
+date: "31/5/2020"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE,error = FALSE, comment = "")
+```
+
+```{r include=FALSE}
+setwd("~/BIOESTADÍSTICA máster/IV. Modelización avanzada/Modelos aditivos y suavizado/Sesión8- 25 mayo. MAS/TareaSesión25MAYO")
+```
+
+**En el fichero *VaricellaData2013.csv* se presentan los casos notificados de varicela en la ciudad de Valencia, en el año 2013. Esta información está desglosada para los distintos barrios de la ciudad. Además, también se recoge la población para cada barrio (*Total_Pob13*) y el porcentaje de población menor de 5 años (*por_menor5*), en 2013. Las variables *x* e *y* presentan la geolocalización de los barrios.**
+
+<!-- rownames(datos)<-datos[,3] # Nombramos cada fila con la Denominación (columna 3) -->
+<!-- datos<-datos[,-3] # Eliminamos la tercera columna -->
+
+Primero cargamos y preparamos los datos, así como el paquete que vamos a utilizar.
+
+```{r warning = FALSE,error = FALSE, message=FALSE}
+datos<-read.csv("VaricellaData2013_v2.csv",sep=";")
+str(datos)
+datos$Distrito<-as.factor(datos$Distrito)
+datos$Barrio<-as.factor(datos$Barrio)
+library(mgcv)
+```
+
+A continuación realizamos una pequeña descriptiva de los datos:
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=5, fig.align="center"}
+summary(datos[,4:6])
+
+par(mfrow=c(1,3))
+boxplot(datos$Counts13,main="Casos varicela")
+boxplot(datos$Total_Pob13,main="Población total")
+boxplot(datos$por_menor5,main="% población < 5 años")
+
+hist(datos$Counts13,main="Casos varicela")
+hist(datos$Total_Pob13,main="Población total")
+hist(datos$por_menor5,main="% población < 5 años")
+```
+
+```{r include=FALSE}
+par(mfrow=c(1,1))
+```
+
+La variable *Counts13* toma únicamente valores enteros y positivos, pues se trata de conteos. Podríamos considerarlo como número de éxitos sobre el total de la población, recogida para cada barrio en la variable *Total_Pob13*, pudiendo considerar entonces que se distribuye como una Binomial. Como alternativa, como esos totales de población son elevados, también podemos considerar que *Counts13* se distribuye como una Poisson.
+
+<!-- ```{r} -->
+<!-- pairs(datos) -->
+<!-- par(mfrow=c(2,2)) -->
+<!-- plot(datos$Total_Pob13,datos$Counts13,ylab="Casos varicela",xlab="Población total") -->
+<!-- plot(datos$por_menor5,datos$Counts13,ylab="Casos varicela",xlab="% población < 5 años") -->
+<!-- par(mfrow=c(1,1)) -->
+<!-- ``` -->
+
+
+
+## Ejercicio 1
+
+**Considera un GLM para explicar los casos notificados a partir de la población total y del porcentaje de población menor a 5 años, considera la interacción entre estas dos variables. Analiza la posibilidad de no incluir esta interacción. ¿Qué opción mejora la explicación de los casos notificados, con interacción o sin ella? Justifica tu respuesta. Analiza la bondad de los dos modelos propuestos.**
+
+### Modelo1.1
+
+El *modelo1.1* corresponde a un GLM que explica los casos notificados a partir de la población total y del porcentaje de población menor a 5 años, considerando que la variable respuesta se distribuye como una Poisson, y utilizando el logaritmo como función de enlace (por defecto).
+
+```{r fig.width=8,fig.height=5,fig.align="center",warning=FALSE, error=FALSE}
+modelo1.1<-glm(Counts13~Total_Pob13+por_menor5,data=datos,family=poisson)
+summary(modelo1.1)
+par(mfrow=c(2,2)) ;plot(modelo1.1); par(mfrow=c(1,1))
+shapiro.test(residuals(modelo1.1))
+```
+
+En este modelo tenemos que todos los coeficientes son significativos, además de un AIC de 573.88. En la gráfica superior izquierda del conjunto anterior vemos que tenemos residuos fuera del intervalo [-2,2], además de que no parecen ser homocedásticos, sino que percibimos cierta estructura de campana. En el gráfico Q-Q vemos que los valores extremos difieren bastante de lo que consideraríamos un comportamiento Normal de los residuos. De hecho, al realizar el test de Shapiro para estudiar la normalidad de los residuos, obtenemos un p-valor de 0.0006, con lo que rechazamos la hipótesis nula de que los residuos sean Normales.
+
+### Modelo1.2
+
+El *modelo1.2* es como el *modelo1.1*, pero teniendo en cuenta además la interacción de las variables explicativas.
+
+```{r fig.width=8,fig.height=5,fig.align="center",warning=FALSE, error=FALSE}
+modelo1.2<-glm(Counts13~Total_Pob13*por_menor5,data=datos,family=poisson)
+summary(modelo1.2)
+par(mfrow=c(2,2)); plot(modelo1.2); par(mfrow=c(1,1))
+shapiro.test(residuals(modelo1.2))
+```
+
+En este caso tenemos que todos los coeficientes son significativos excepto el intercepto. El AIC es 570.41, menor que el del modelo anterior. Vemos que los residuos están también lejos de cumplir las validaciones necesarias, siendo de una magnitud similar a los del *modelo1.1*, también heterocedásticos y sin distribuirse tampoco en este caso como una Normal.
+
+```{r}
+1-pchisq(modelo1.1$deviance-modelo1.2$deviance,
+         modelo1.1$df.residual-modelo1.2$df.residual)
+```
+
+Sin embargo, cuando realizamos el test $\chi^2$ para comparar la diferencia de deviances entre ambos modelos, obtenemos un p-valor de 0.0194, por lo que dicha diferencia sí es significativa y por tanto consideramos que la opción que sí considera la interacción entre las variables de población total y porcentaje de población menor a 5 años, mejora la explicación de los casos notificados.
+
+
+## Ejercicio 2
+
+**Considera un GAM para explicar los casos notificados a partir de la suavización bivariante de la población total y el porcentaje de población menor a 5 años. Analiza la bondad del modelo propuesto.**
+
+Como disponemos de 70 observaciones, al no ser una muestra de gran tamaño pensamos que en principio podría ser conveniente utilizar entre 3 y 7 nodos en las funciones de suavizado. Hemos probado distintos valores de *k* para intentar conseguir modelos adecuados, en todos los casos considerando los nodos equidistribuidos.
+
+Vamos a realizar dos modelos con suavizados bivariantes de la población total y el porcentaje de población menor a 5 años, cada uno de ellos con una base de *splines* distinta:
+
+### Modelo2.1
+
+Por un lado, en el modelo *modelo2.1* utilizamos los *thin plate splines*, indicando el argumento *bs="tp"* en la función `s()`, que realiza el suavizado dentro de la función `gam()` del paquete *mgcv*.
+
+```{r fig.width=8,fig.height=5,fig.align="center",warning=FALSE, error=FALSE}
+modelo2.1<-gam(Counts13~s(Total_Pob13,por_menor5,bs="tp",k=7),
+               data=datos,family=poisson)
+summary(modelo2.1)
+modelo2.1$aic
+par(mfrow=c(2,2)) ;gam.check(modelo2.1); par(mfrow=c(1,1))
+shapiro.test(residuals(modelo2.1))
+```
+
+Utilizando una *k=7*, tenemos que tanto el intercepto como el suavizado son significativos. Además, el valor de los grados de libertad efectivos (edf) de 4.345, lejano a 1, nos indica que el suavizado realizado sí es necesario. Tenemos un R^2^~ajustado~ de 0.64; un AIC de 572.3 y una deviance explicada del 55.7%.
+
+De tener un *k-index* menor que 1, nos indicaría que el nivel de suavizado utilizado no es lo suficientemente grande, pero en este caso lo tenemos de 1.1 que, junto a un p-valor de 0.86 (siendo la hipótesis nula que la dimensión de la base es correcta), podemos considerar que el suavizado es suficiente y adecuado.
+
+Sin embargo, tanto en el gráfico Q-Q como el p-valor obtenido en el test de Shapiro sobre los residuos del modelo, nos indican que estos no se distribuyen como una Normal. Además, si observamos la gráfica superior derecha del conjunto anterior, tenemos que los residuos no parecen ser homocedásticos.
+
+### Modelo2.2
+
+Por otro lado, en el modelo *modelo2.2* utilizamos los *tensor product splines*, que indicamos mediante la función `te()` en lugar de `s()` para definir el suavizado.
+
+```{r fig.width=8,fig.height=5,fig.align="center",warning=FALSE, error=FALSE}
+modelo2.2<-gam(Counts13~te(Total_Pob13,por_menor5,k=4),
+               data=datos,family=poisson)
+summary(modelo2.2)
+modelo2.2$aic
+par(mfrow=c(2,2)) ;gam.check(modelo2.2); par(mfrow=c(1,1))
+shapiro.test(residuals(modelo2.2))
+```
+
+En este caso, he decidido utilizar un suavizado de *k=4*. Obtenemos de nuevo que tanto el intercepto como el suavizado son significativos. Los grados de libertad efectivos obtenidos son de 11.7, todavía más distintos de 1, lo cual indica que el suavizado realizado es necesario. Tenemos valores de R^2^~ajustado~  y deviance explicada mayores y un AIC menor que en el *modelo2.1*, de 0.662, 64.4% y 530.7, respectivamente, lo cual en principio nos puede llevar a pensar que en este caso y con las dimensiones de suavizado elegidas, utilizando los *tensor product splines* tenemos un modelo mejor.
+
+Al estudiar los residuos del modelo, obtenemos en el test Shapiro un p-valor de 0.05755 que, al ser mayor que el nivel de significatividad que estamos utilizando en todo el trabajo (del 5%), no tenemos evidencia estadística suficiente para rechazar la hipótesis nula y por tanto podríamos considerar que los residuos del *modelo2.2* son normales. También vemos en el gráfico de los residuos frente a los predictores lineales, que esta vez sí parece haber una distribución que no sigue ningún tipo de patrón, por lo que podríamos considerar que también se da la homocedasticidad en los residuos.
+
+
+En el siguiente gráfico representamos las predicciones que realizamos con cada uno de los dos modelos de este ejercicio. Vemos que esas estimaciones son muy similares utilizando las distintas bases.
+
+```{r  warning=FALSE, message=FALSE, fig.width=9, fig.height=4, fig.align="center"}
+plot(modelo2.1$fitted.values,modelo2.2$fitted.values,main="Estimaciones modelos 2")
+abline(a=0,b=1,col=2)
+```
+
+
+
+
+## Ejercicio 3
+
+**En el modelo anterior, añade el suavizado bivariante de las variables de geolocalización ¿Podemos decir que esta consideración mejora el modelo propuesto en el apartado anterior? Justifica tu respuesta. Analiza la bondad del modelo. A la hora de explicar los casos de varicela, ¿qué supone que la suavización de las variables de geolocalización sea significativa, o no? Justifica tu respuesta.**
+
+Ahora vamos a añadir al mejor de los dos modelos del ejercicio anterior (es decir, al *modelo2.2*), el suavizado bivariante de las variables de geolocalización. Lo haremos también con las dos bases de *splines* de los modelos anteriores:
+
+### Modelo3.1
+
+En el *modelo3.1* hemos añadido el suavizado bivariante de las variables *x* e *y* con los *thin plate splines*, y hemos utilizado una dimensión de la base de *k=11*, pues realizando diversas pruebas, es la mínima obtenida para conseguir un *k-index* mayor que 1, y por tanto pensamos que tal vez un valor de *k* menor, en este caso sería insuficiente.
+
+```{r fig.width=8,fig.height=5,fig.align="center",warning=FALSE, error=FALSE}
+modelo3.1<-gam(Counts13~te(Total_Pob13,por_menor5,k=4)+s(x,y,bs="tp",k=11),
+               data=datos,family=poisson)
+summary(modelo3.1)
+modelo3.1$aic
+1-pchisq(modelo2.2$deviance-modelo3.1$deviance,
+         modelo2.2$df.residual-modelo3.1$df.residual)
+```
+
+Tenemos que tanto el intercepto como los dos suavizados bivariantes son significativos, y vemos que el valor de los grados de libertad efectivos asociados al suavizado de las variables de geolocalización es de 8.948, que al ser muy distinto de 1 nos indica que sí es necesario realizar este suavizado. Obtenemos un R^2^~ajustado~  de 0.734, un AIC de 471.53 y explicamos el 76.9% de la deviance, por lo que pensamos que este modelo es mejor que el *modelo2.2*, que no incluía  el suavizado de *x* e *y*. Tanto es así, que al realizar el test $\chi^2$ entre la diferencia de deviances de ambos modelos, tenemos un p-valor de prácticamente 0, que nos indica que esa diferencia es muy significativa, y que por tanto es mejor opción sí incluir el suavizado de las variables de geolocalización en el modelo. Con todo ello, esta consideración añadida sí mejora el modelo propuesto en el ejercicio anterior.
+
+
+```{r fig.width=8,fig.height=5,fig.align="center",warning=FALSE, error=FALSE}
+par(mfrow=c(2,2)) ;gam.check(modelo3.1); par(mfrow=c(1,1))
+shapiro.test(residuals(modelo3.1))
+```
+
+En cuanto a la validez de este *modelo3.1*, tanto en el gráfico Q-Q como por el histograma y el p-valor resultante del test de Shapiro sobre los residuos, vemos que podríamos considerar que estos siguen una distribución Normal. Además, no se observa ningún patrón en el gráfico superior derecho que indique que la presencia de heterocedasticidad.
+
+### Modelo3.2
+
+En el *modelo3.2* también hemos añadido el suavizado bivariante de las variables *x* e *y*, pero esta vez con con los *tensor product splines*. En este caso, tras realizar diversas pruebas hemos obtenido que, habiendo fijado *k=4* para el suavizado bivariante de la población total y el porcentaje de población menor a 5 años por los resultados del ejercicio anterior, el valor mínimo del suavizado de las variables de geolocalización (para tener un *k-index* de al menos 1) es de *k=6*.
+
+
+```{r}
+modelo3.2<-gam(Counts13~te(Total_Pob13,por_menor5,k=4)+te(x,y,k=6),
+               data=datos,family=poisson)
+summary(modelo3.2)
+modelo3.2$aic
+1-pchisq(modelo2.2$deviance-modelo3.2$deviance,
+         modelo2.2$df.residual-modelo3.2$df.residual)
+```
+
+Los valores de R^2^~ajustado~ (0.816) y deviance explicada (85.1%) son mayores, y el AIC (de 438.84) menor que en el resto de modelos que hemos creado, por lo que podemos pensar que este *modelo3.2* es la mejor de las opciones de entre las estudiadas en este trabajo. Con el test $\chi^2$ para evaluar la diferencia de deviances de este modelo con el *modelo2.2* tenemos un p-valor de 0, lo cual indica que esa diferencia es claramente significativa, y por tanto con los *tensor product splines* para ambos suavizados bivariantes tenemos que también es preferible introducir en el modelo el suavizado de las variables de geolocalización que no introducirlo.
+
+
+```{r fig.width=8,fig.height=5,fig.align="center",warning=FALSE, error=FALSE}
+par(mfrow=c(2,2)) ;gam.check(modelo3.2); par(mfrow=c(1,1))
+shapiro.test(residuals(modelo3.2))
+```
+
+Con respecto al análisis de los residuos, el gráfico Q-Q y el p-valor resultante del test de Shapiro nos indican que podríamos considerar que los residuos siguen una distribución Normal. Además, en este caso tampoco se observa ningún patrón en el gráfico de los residuos frente al predictor lineal que indique que presencia de heterocedasticidad, y por tanto podríamos suponer que los residuos son homocedásticos.
+
+<!-- Podemos estudiar la autocorrelación espacial de los residuos de este modelo a partir del variograma de los mismos. Para ello, utilizaremos la función `variog()` del paquete *geoR*. Con el argumento *estimator.type="modulus"* indicamos que utilizamos el estimador robusto, pues es preferible al evitar el efecto de los extremos sobre la media. Hemos probado con diferentes amplitudes de los intervalos del variograma (con el argumento *uvec*), pues con demasiados intervalos tendríamos mucho ruido, y demasiado pocos resultaría complejo más adelante realizar el ajuste. En este caso, decidimos utilizar intervalos de amplitud 0.4. -->
+
+<!-- ```{r, warning=FALSE, message=FALSE, fig.width=12, fig.height=5, fig.align="center"} -->
+<!-- geo.res<-list(data=residuals(modelo3.2,type="deviance"),coords=cbind(x=datos$x,y=datos$y)) -->
+<!-- plot(variog(geo.res,estimator.type="modulus",messages=F,max.dist=1,uvec=seq(-0,1,by=.01)),pch=20) -->
+<!-- ``` -->
+
+<!-- plot(fitted(modelo3.2),residuals(modelo3.2)) -->
+
+En el siguiente gráfico están representadas las predicciones que realizamos con cada uno de los dos modelos de este ejercicio, y de nuevo vemos que esas estimaciones son muy similares utilizando las distintas bases.
+
+```{r warning=FALSE, message=FALSE, fig.width=9, fig.height=4, fig.align="center"}
+plot(modelo3.1$fitted.values,modelo3.2$fitted.values,main="Estimaciones modelos 3")
+abline(a=0,b=1,col=2)
+```
+
+
+A la hora de explicar los casos de varicela, el hecho de que la suavización de las variables de geolocalización sea significativa supone que hay una componente espacial, y por tanto que los casos de varicela que hay en cada lugar están relacionados con los que hay a su alrededor. Esto concuerda con lo que cabía esperar en un principio, pues se trata de una enfermedad contagiosa.
+
+
+
+
+
+
+
+
+

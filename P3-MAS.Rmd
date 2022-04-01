@@ -1,0 +1,295 @@
+---
+title: "Tarea 1; Tema 2 MAS"
+author: "Zuri Montalar Mendoza"
+date: "01/05/2020"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE, warning=FALSE, error=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+setwd("~/BIOESTADÍSTICA máster/IV. Modelización avanzada/Modelos aditivos y suavizado/Sesión4- 27 abril. MAS")
+```
+
+ 
+# Ejercicio 1
+**Trabaja el ejemplo 2.2 con `bs()`, la función de R del paquete *splines*, que vimos en el tema anterior. Compara los resultados. Recuerda que esta función trabaja con B-splines. Puedes tomar como referencia, el ejercicio 6 del script del tema anterior. Trabaja con los mismos nodos.**
+
+Primero cargamos y representamos los datos de partida, y cargamos los paquetes que vamos a utilizar.
+
+```{r  warning=FALSE, error=FALSE, fig.width=12,fig.height=5}
+# Cargamos los datos
+x<-c(0.1,0.2,0.4,0.5,0.7,0.9)
+y<-c(2,4,5,3,2,6)
+db<-data.frame(x=x,y=y)
+# Representamos los datos
+plot(x,y, ylim=c(-0.5,9),xlim=c(-0.01,1.01),pch=16)
+
+library(stats)
+library(splines)
+```
+
+A continuación, realizamos el ejemplo 2.2 disponible en el script *Ejemplo estimación una variable.R*, en el que estimamos el modelo que hemos llamado *modeloq2* con la variable *x* mediante la estrategia de *splines* de regresión y utilizando como base de *splines* la siguiente, basada en $q-2$ nodos:
+$$
+b_1(x)=1\\b_2(x)=x\\b_{j+2}(x)=R(x,x_j^*)
+$$
+Teniendo que $j=1,2,\ldots,q-2$ y siendo:
+
+$$
+R(x,z)=\frac{[(z-1/2)^2-1/12]\cdot[(x-1/2)^2-1/12]}{4}-\frac{(|x-z|-1/2)^4-1/2(|x-z|-1/2)^2+7/240}{24}
+$$
+
+```{r  warning=FALSE, error=FALSE}
+# Definición de la parte no lineal de la base de splines cúbicos
+rk <- function(x,z){
+  ((z-0.5)^2-1/12)*((x-0.5)^2-1/12)/4-((abs(x-z)-0.5)^4-(abs(x-z)-0.5)^2/2+7/240)/24
+}
+# Definición de la matriz de diseño del modelo de regresión con splines
+spl.X <- function(x,xk){
+  q<-length(xk)+2   # número de parametros   
+  n<-length(x)      # número de datos
+  X<-matrix(1,n,q)  # inicialización de la matriz de diseño del modelo
+  X[,2]<-x         	# selecciona la segunda columna a x
+  X[,3:q]<-outer(x,xk,FUN=rk) # y el resto a R(x,xk)
+  X
+}
+nodos<-1:2/3       # definición de los nodos
+X<-spl.X(x,nodos)	 # matriz de diseño
+modeloq2<-lm(y~X-1) # modelo de regresión ajustado
+nuevos_puntos<-(0:1000)/1000               # valores para calcular la
+nuevos_puntos<-data.frame(x=nuevos_puntos) # función de regresión ajustada
+Xp<-spl.X(nuevos_puntos$x,nodos)
+```
+
+Ahora creamos un modelo que también estime *y* con la variable *x* y también mediante la estrategia de *splines* de regresión, pero utilizando como base la de *B-splines*. Para ello, empleamos la función `bs()` del paquete *splines*. Además, para comparar las predicciones con las distintas bases, utilizamos los dos mismos nodos.
+
+```{r warning=FALSE, error=FALSE}
+modeloB2<-lm(y~bs(x,knots=nodos,degree=2)) # cuadrático
+modeloB3<-lm(y~bs(x,knots=nodos,degree=3)) # cúbico
+```
+
+Representamos gráficamente las predicciones que realizan los modelos creados:
+
+```{r warning=FALSE, error=FALSE, fig.width=12,fig.height=5}
+plot(x,y, ylim=c(-2,11.5),xlim=c(-0.01,1.01),pch=16,main="splines de regresión")
+lines(nuevos_puntos$x,Xp%*%coef(modeloq2),lty=1,lwd=3,col=2) # con base creada q-2 nodos
+lines(nuevos_puntos$x,predict(modeloB2,newdata=nuevos_puntos),col=3,lwd=2) # con base B-splines 2
+lines(nuevos_puntos$x,predict(modeloB3,newdata=nuevos_puntos),col=4,lwd=2) # con base B-splines 2
+legend("topleft",col=2:4,lwd=2,
+      legend=c("con base creada q-2 nodos","con base B-splines, cuadrático",
+               "con base B-splines, cúbico"))
+```
+
+Vemos que con un polinomio cúbico y la base *B-splines*, las predicciones realizadas pasan por todos los puntos pertenecientes a los datos de partida, mientras que con uno cuadrático y esa misma base o con la base basada en $q-2$ nodos, no. Entonces, tendremos menor suma de cuadrados residual (RSS) y por tanto podríamos decir que nos ajustamos mejor a los datos en ese primer caso del polinomio cúbico con base *B-splines*. Sin embargo, la forma de las funciones obtenidas son más similares a la de la otra base en el caso de utilizar el polinomio cuadrático y, comparando estas (líneas roja y verde de la gráfica anterior), vemos que se produce pero ajuste a los datos en el caso de la base *B-splines*. Esto lo podemos apreciar también numéricamente calculando las Rss:
+
+```{r}
+sum((y-modeloq2$fitted.values)**2) # RSS con base creada q-2 nodos
+sum((y-modeloB2$fitted.values)**2) # RSS con base B-splines, cuadrático
+```
+
+# Ejercicio 2
+**Trabaja el ejemplo 2.4 con `smooth.spline()`, la función de R del paquete *stats*, que vimos en el tema anterior. Puedes tomar como referencia, el ejercicio 8 del script del tema anterior. Compara los resultados.**
+
+En este ejercicio trabajamos con los mismos datos de partida *x* e *y* del ejercicio anterior.
+
+A continuación, realizamos el ejemplo 2.4 disponible en el script *Ejemplo suavizado una variable.R*, en el que utiliza la técnica de *splines* de suavizado con la misma base basada en $q-2$ nodos del ejercicio anterior (la función `rk()` creada), y empleando entonces la misma definición de la matriz de diseño del modelo (la función `spl.X()` creada). También trabajaremos con los dos mismos nodos que en el ejercicio anterior.
+
+Podemos obtener la estimación de $\beta$ a partir del modelo lineal equivalente $Y'=B'\cdot\beta$, con $B'=\left[\begin{array}{ll}~~B\\C\sqrt{\lambda}\end{array}\right]$. Además, se cumple que $C^TC=\Omega$. Siendo $\Omega$ la matriz de penalización, creamos una función para calcular la misma (`spl.S()`), y obtenemos $C$ creando otra función (`mat.sqrt()`) que realice la factorización de Choleski para calcular la raíz cuadrada de la matriz $\Omega$.
+
+```{r warning=FALSE, error=FALSE}
+# Definición de la matriz de penalización
+spl.S<-function(xk){
+  q<-length(xk)+2 #
+  S<-matrix(0,q,q)
+  S[3:q,3:q]<-outer(xk,xk,FUN=rk)
+  S
+}
+
+# Descomposición de Choleski para calcular la raíz cuadrada de una matriz
+mat.sqrt<-function(S){ 
+  d<-eigen(S,symmetric=TRUE)
+  rS<-d$vectors%*%diag(d$values^0.5)%*%t(d$vectors)  
+}
+
+# Modelo de regresión equivalente
+prs.fit<-function(y,x,xk,lambda){
+  q<-length(xk)+2
+  n<-length(x)
+  Xa<-rbind(spl.X(x,xk),mat.sqrt(spl.S(xk))*sqrt(lambda))
+  y[(n+1):(n+q)]<-0
+  lm(y~Xa-1)
+}
+```
+
+Sin embargo, los resultados dependen del parámetro de suavización escogido ($\lambda$) tal como vimos en el tema anterior. Representamos en la siguiente gráfica cuatro ajustes con valores de $\lambda$ distintos:
+
+```{r warning=FALSE, error=FALSE, fig.width=12,fig.height=5}
+plot(x,y, ylim=c(-0.5,9),xlim=c(-0.01,1.01),pch=16,main="con base creada q-2 nodos")
+lambda=c(0.01,0.001,0.0001,0.00001)
+for (i in 1:length(lambda)) {
+  Xa<-rbind(spl.X(x,nodos),mat.sqrt(spl.S(nodos))*sqrt(lambda[i]))
+  modelo.lambda<-prs.fit(y,x,nodos,lambda[i])
+  Xp<-spl.X(nuevos_puntos$x,nodos)
+  lines(nuevos_puntos$x,Xp%*%coef(modelo.lambda),lty=1,lwd=2,col=i+1)
+}
+legend("topleft",col=2:(length(lambda)+1),cex=0.85,lwd=2,legend=paste("lambda = ",lambda))
+```
+
+Tenemos que $\lambda$ penaliza la variabilidad, de modo que si $\lambda=0$, el término de penalización no tiene efecto; y en cuanto mayor sea su valor, más suave o menos variable será la función. Para obtener el valor del parámetro de suavización óptimo, en este caso optamos por el criterio de validación cruzada generalizado (GCV):
+
+```{r warning=FALSE, error=FALSE}
+# Estimación del parámetro de suavización
+lambda<-1e-6
+n<-length(y)
+GCV<-c()
+mm<-60 # número de iteraciones
+for (i in 1:mm){
+  mod<-prs.fit(y,x,nodos,lambda)
+  traA<-sum(influence(mod)$hat[1:n]) # traza de la matriz de proyección
+  rss<-sum((y-fitted(mod)[1:n])^2)   # suma de cuadrados residual
+  GCV[i]<-n*rss/(n-traA)^2           # estadístico GCV
+  lambda<-lambda*1.5
+}
+
+# plot(1:mm,GCV,type="l",lty=1,lwd=2)
+i<-(1:mm)[GCV==min(GCV)] #calcula el índice de min(V)
+lambda<-1.5^(i-1)*1e-8 #Calcula la estimación de lambda
+lambda
+modGCV<-prs.fit(y,x,nodos,lambda) #modelo con base creada q-2 nodos, con lambda óptimo
+
+```
+
+En este caso, el $\lambda$ óptimo que se obtiene es 1.139063e-07.
+
+En lugar de trabajar con esa base de $q-2$ nodos, podemos utilizar la base *B-splines* en esta misma técnica de *splines* de suavizado mediante la función `smooth.spline()` del paquete *stats*. Indicando como *TRUE* el argumento *cv*, la función obtendrá el valor de $\lambda$ óptimo por validación cruzada, y lo utilizará para realizar el ajuste. Obtenemos en este caso que el valor óptimo del parámetro de suavizado es 1.290931e-12, también muy próximo a 0.
+
+```{r warning=FALSE, error=FALSE}
+modeloB2<-smooth.spline(y~x,cv=TRUE)
+modeloB2$lambda
+```
+
+Representamos gráficamente las predicciones que realizan los modelos creados:
+
+```{r warning=FALSE, error=FALSE, fig.width=12,fig.height=5}
+plot(x,y, ylim=c(-0.5,9),xlim=c(-0.01,1.01),pch=16,main="splines de suavizado")
+lines(nuevos_puntos$x,Xp%*%coef(modGCV),col=2,lwd=2) # con base creada q-2 nodos
+lines(predict(modeloB2,nuevos_puntos$x),col=3,lwd=2) # con base B-splines
+legend("topleft",col=2:3,cex=0.85,lwd=2,
+      legend=c("con base creada q-2 nodos","con base B-splines"))
+```
+
+Vemos que en este caso los ajustes con ambas bases son bastante similares, pese a que nos ajustamos mejor a los datos de partida (y por tanto tendremos menor RSS) con la base *B-splines*.
+
+# Ejercicio 3
+**La base de datos arboles.txt recoge información de 31 cerezos, presenta sus volúmenes, sus circunferencias y sus alturas. Se propone explicar el volumen a partir de un modelo aditivo con las covariables circunferencia y altura. Trabaja con el script arboles.r. Analiza el código y realiza el ajuste ¿Se puede decir que existe relación entre el volumen de los cerezos y su altura y circunferencia? Justifica tu respuesta.**
+
+Primero cargamos los datos:
+
+```{r warning=FALSE, error=FALSE}
+arboles<-read.table("arboles.txt")
+```
+
+*Volumen* es la variable respuesta, y los predictores son *Circun* y *Altura*. Creamos un modelo aditivo, de modo que: $Volumen=f_1(Circun)+f_2(Altura)+\epsilon_i$.
+
+```{r warning=FALSE, error=FALSE, fig.width=12,fig.height=5}
+# Splines de regresión penalizados con 2 variables predictoras
+summary(arboles)
+attach(arboles)
+par(mfrow=c(1,2))
+plot(Circun,Volumen,pch=16,xlab="Circunferencia",ylab="Volumen")
+plot(Altura,Volumen,pch=16,xlab="Altura",ylab="Volumen") 
+par(mfrow=c(1,1))
+```
+
+Utilizamos las funciones `rk()`, `spl.X()`, y `spl.S()` creadas en los ejercicios anteriores, para obtener, respectivamente, la base con la que vamos a trabajar en los *splines* de suavizado, la matriz de diseño y la matriz de penalización; así como `mat.sqrt()` para la factorización de Choleski.
+
+```{r warning=FALSE, error=FALSE}
+# función para preparar los datos para un modelo aditivo con 2 variables
+am.setup<-function(x,z,q=10)
+# Calcula X, S_1 and S_2 para un AM con dos variables    
+{ # elegimos los nodos ...
+  xk<-quantile(unique(x),1:(q-2)/(q-1))
+  zk<-quantile(unique(z),1:(q-2)/(q-1))
+  # calculamos las matrices de penalizacion
+  S<-list()
+  S[[1]]<-S[[2]]<-matrix(0,2*q-1,2*q-1)
+  S[[1]][2:q,2:q]<-spl.S(xk)[-1,-1]
+  S[[2]][(q+1):(2*q-1),(q+1):(2*q-1)]<-spl.S(zk)[-1,-1]
+  # calculamos la matriz del modelo
+  n<-length(x)
+  X<-matrix(1,n,2*q-1)
+  X[,2:q]<-spl.X(x,xk)[,-1]           # 1st smooth
+  X[,(q+1):(2*q-1)]<-spl.X(z,zk)[,-1] # 2nd smooth
+  list(X=X,S=S)
+}
+
+# preparamos los datos al intervalo [0,1]
+rg<-range(Circun)
+Circun<-(Circun-rg[1])/(rg[2]-rg[1])
+rh<-range(Altura)
+Altura<-(Altura-rh[1])/(rh[2]-rh[1])
+
+# aplicamos la función preparativa a estos datos
+am0<-am.setup(Circun,Altura)
+
+```
+
+A la función creada `am.setup()` se le introducen las dos variables (*Circun* y *Altura*) en un rango entre 0 y 1, y devuelve dos elementos que contienen la matriz de diseño del modelo aditivo, y la matriz de penalización de cada variable.
+
+Con la función `fit.am()` ajustamos como tal el modelo aditivo con dos predictores, siendo la salida de las misma el propio modelo, el valor del criterio GCV, y el par parámetros de penalización (cada uno correspondiente a una de las covariables):
+
+```{r warning=FALSE, error=FALSE}
+fit.am<-function(y,X,S,sp)
+# función para ajustar un modelo am con dos covariables    
+{ # calculo la raiz cuadrada de la matriz total de penalización
+  rS <- mat.sqrt(sp[1]*S[[1]]+sp[2]*S[[2]])
+  rS
+  q.tot <- ncol(X)                # nº de parámetros
+  n <- nrow(X)                    # nº de datos
+  X1 <- rbind(X,rS)               # matriz de diseño aumentada
+  y1 <- c(y,rep(0,q.tot))         # datos de y aumentado
+  b<-lm(y1~X1-1)                  # modelo ajustado
+  trA<-sum(influence(b)$hat[1:n]) # tr(A)
+  norm<-sum((y-fitted(b)[1:n])^2) # RSS
+  list(model=b,gcv=norm*n/(n-trA)^2,sp=sp)
+}
+```
+
+En caso de querer utilizar los parámetros de penalización óptimos, podemos crear un bucle en el que se ajuste el modelo con varios pares de parámetros, y elegir el modelo que menor GVC tenga, pues consideraremos que es el mejor modelo. A continuación, buscamos el mejor modelo probando con 30 parámetros de penalización de cada variable, entre 1e-05 y 5368.709.
+
+```{r}
+sp<-c(0,0)   # iniciamos el vector con los dos parámetros de penalización 
+for (i in 1:30) for (j in 1:30)  # bucle sobre sp grid
+{ sp[1]<-1e-5*2^(i-1);sp[2]<-1e-5*2^(j-1) # s.p.s
+  b<-fit.am(y=Volumen,X=am0$X,S=am0$S,sp) # ajuste utilizando sp
+  if (i+j==2) best<-b else     # almacena el primer modelo
+  if (b$gcv<best$gcv) best<-b  # almacena el mejor modelo
+}
+best$sp   # calcula los mejores parámetros de suavización según GCV
+```
+
+Hemos obtenido que los parámetros de suavización óptimos para las covariables *Circun* y *Altura* son, respectivamente, 0.01024 y 5368.70912. Si nos damos cuenta, el valor óptimo del parámetro de suavización correspondiente a *Altura* es el máximo de entre todos los que hemos probado mediante el bucle *for*; de hecho, si probásemos con posibles valores del mismo todavía mayores, obtendríamos estos como óptimos. El valor de $\lambda$ asociado a *Circun* cercano a 0 implica que la suavización tiene muy poco efecto, y que por tanto la función $f_1(\cdot)$ es poco suave. Por el contrario, el elevado valor de $\lambda$ asociado a *Altura* conlleva a que los datos se suavicen excesivamente, los que lleva a que se realice la estimación a partir de una línea recta.
+
+
+```{r warning=FALSE, error=FALSE, fig.width=12,fig.height=5}
+plot(fitted(best$model)[1:length(Volumen)],Volumen,
+     ylab="Volumen ajustado",xlab="Volumen observado",pch=16)
+abline(0,1,col=2,lwd=2)
+```
+
+
+En la gráfica anterior hemos representado los valores ajustados del volumen sobre los valores observados del mismo, y vemos que todos puntos se distribuyen alrededor de una línea recta, por lo que podríamos decir que sí existe relación entre el volumen de los cerezos y su altura y circunferencia, y que el ajuste realizado teniendo ambas covariables en cuanta parece bastante bueno.
+
+<!-- ```{r warning=FALSE, error=FALSE} -->
+<!-- summary(best$model) -->
+<!-- par(mfrow=c(2,2)) -->
+<!-- plot(best$model) -->
+<!-- par(mfrow=c(1,1)) -->
+<!-- ``` -->
+
+
+

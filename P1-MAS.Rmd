@@ -1,0 +1,182 @@
+---
+title: "Tarea 1: Métodos de suavizado en regresión"
+subtitle: "Modelos aditivos y suavizado"
+author: "Zuri Montalar Mendoza"
+date: "4/3/2020"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r global_options, include=FALSE,fig.align="center"}
+ knitr::opts_chunk$set(warning=FALSE)
+```
+
+<div style="text-align: justify">
+
+$~~~$Primero creamos las variables con las que vamos a trabajar.
+
+```{r}
+t<-c(1.42,1.58,1.78,1.99,1.99,1.99,2.13,2.13,2.13,2.32,2.32,2.32,2.32,2.32,2.43,2.43,2.78,2.98,2.98)
+
+d<-c(4.0,4.2,2.5,2.6,2.8,2.4,3.2,2.4,2.6,4.8,2.9,3.8,3.0,2.7,3.1,3.3,3.0,2.8,1.7)
+```
+
+$~~~$Trabajamos con el siguiente modelo:
+$d_i=f(t_i)+\epsilon_i;~~~\epsilon_i$**~**$N(0, \sigma^2)~~i.i.d. ~~~i=1,2,...,19$
+
+$~~~$Por lo que *d* es la variable respuesta; y *t* es la variable explicativa.
+
+```{r fig.width=12,fig.height=5}
+plot(t,d)
+```
+
+$~~~$Representando ambas variables como en el gráfico anterior, a simple vista no observamos que tengan una relación que podamos asignar de antemano (como lineal o cuadrática, por ejemplo), por lo que nos decantamos por un enfoque no paramétrico en el que los propios datos nos sugieran cuál es la relación entre las variables.
+
+$~~~$A continuación llevaremos a cabo dos métodos, regresión polinomial local y suavizado *kernel*, que permiten realizar este ajuste no paramétrico y estudiaremos cómo afectan distintos aspectos a considerar en cada uno de ellos en el ajuste.
+
+\newpage
+
+## Regresión polinomial local
+
+$~~~$La estrategia de regresión polinomial local consiste en dividir el dominio de interés en intervalos contiguos (ventanas), de modo que representaremos la función $f(\cdot)$ partiendo de un polinomio diferente en cada uno de esos intervalos, empleando para crear esos polinomios una familia paramétrica (utilizaremos regresión lineal y cuadrática en este caso), de manera local. Además, para crear esa regresión local, se le da más importancia, peso, a los datos del entorno del punto de interés más próximos al mismo. Con todo ello, la curva de la función $f(\cdot)$ se crea con la unión entre los puntos que en cada ventana corresponden a los puntos de interés ($x$) y sus valores ajustados con la regresión. 
+
+
+#### Ajuste localmente cuadrático \newline
+
+Para realizar el ajuste localmente cuadrático, en R podemos implementarlo mediante la función `loess()`, siendo *span* el argumento correspondiente para controlar el suavizado (y por tanto el tamaño de la ventana, aunque alternativamente se puede controlar también con el argumento *enp.target*), por lo que mayores valores de *span*, proporcionarán mayor suavidad. También podríamos indicar los pesos en cada caso con el argumento *weights*. Además, esta función por defecto realiza el ajuste localmente cuadrático, pero podemos utilizarla para ajustes de polinomios de otros grados modificando el argumento *degree*.
+
+```{r fig.width=12,fig.height=5}
+plot(t,d, main="Ajuste localmente cuadrático")
+span<-c(8,3,1.5,1,.7,.5,0.31579)
+for (i in 1:length(span))
+lines(t,predict(loess(d~t,span=span[i])),col=i+1,lwd=2)
+legend("topright",
+      legend=paste("span = ",span),
+      col=2:(length(span)+1),lwd=2)
+```
+
+
+$~~~$Al representar gráficamente ese ajuste localmente cuadrático con distintos valores de *span*, también se ve claramente que a mayores valores del mismo, el suavizado es mayor.
+
+$~~~$En este caso y por un lado, el menor valor de *span* para el que conseguimos que se cree un ajuste a lo largo de todos los valores de la variable explicativa es 0.31579.
+
+$~~~$Por otro lado, vemos que obtenemos distintos ajustes con valores de *span* mayores que 1 (aunque a partir de *span*=2, los ajustes son muy similares). Esto en principio puede llamarnos la atención, pues entendemos el *span* como la proporción de puntos en la gráfica que influyen en el suavizado en cada valor, y por tanto debería tener valores entre 0 y 1. En esos casos, cuando *span* es menor que 1, la ponderación que se utiliza en la regresión polinomial es la tricúbica (esto es, proporcional a  $(1-(distancia/distaciaMáxima)^3)^3$). Sin embargo, es posible y podemos ajustar con valores de *span* mayores que 1 porque en todos los casos considera todos esos puntos en la gráfica, y además en estos casos se asume que esa distancia máxima es $\alpha^{1/p}$ veces la distancia máxima real para *p* variables explicativas (en nuestro ejemplo, una), siendo $\alpha$ el valor de *span* considerado.
+
+
+$~~~$En todo caso, la elección del ancho de banda es muy importante debido a la influencia del mismo en el procedimiento de estimación, de modo que si trabajamos con un ancho de banda demasiado pequeño, sólo influirán en el cálculo del estimador las observaciones muy cercanas al punto de estimación, y por tanto se describirán muy bien los comportamientos locales pero tendremos una curva estimada muy variable (poco suave); y si trabajamos con anchos de banda demasiado grandes, las estimaciones en cada punto estarán afectadas por observaciones en puntos muy alejados, por lo que difícilmente se podrán recoger los comportamientos locales, lo que da lugar a grandes sesgos y como consecuencia obtendremos poca variabilidad.
+
+$~~~$A continuación, creamos una función que hace la suma de los residuos al cuadrados, y minimizamos esa función para buscar el ancho de banda (*span*) óptimo.  Además, como para ello la función `optim()` que utilizamos contiene aleatoriedad intrínseca, decidimos fijar una semilla.
+
+```{r}
+opt2SSE <- function(x){
+  loessMod <- try(loess(d~t,span=x),silent=T)
+  residuos <- try(loessMod$residuals,silent=T)
+  if(class(residuos)!="try-error") {SSE <- sum(residuos^2)}
+  else {SSE <- 99999}
+  return(SSE)}
+set.seed(3)
+# Buscamos el span óptimo que minimiza SSE, empezando en 0.5
+(optimo2<-optim(par=c(0.5), fn=opt2SSE, method="SANN"))
+```
+
+$~~~$Podemos representar cómo sería el ajuste cuadrático con el *span* óptimo que hemos calculado, que en este caso es de 0.36 aproximadamente, siendo la suma de los residuos al cuadrado correspondiente de 4.06:
+
+```{r fig.width=12,fig.height=5}
+plot(t,d, main="Ajuste localmente cuadrático con span óptimo")
+lines(t,predict(loess(d~t,span=optimo2$par)),col=2,lwd=2)
+```
+
+
+#### Ajuste localmente lineal \newline
+
+En cuanto al ajuste localmente lineal, podemos utilizar la función `lowess()` para implementarlo en R. En ella, con el argumento *f* podemos controlar el *span* de suavizado, y por tanto el tamaño de la ventana. Más concretamente, *f* puede valer entre 0 y 1 e indica la proporción de puntos en la gráfica que influyen en el suavizado en cada valor, de forma que a mayores valores de *f*, mayor suavidad.
+
+
+```{r fig.width=12,fig.height=5}
+plot(t,d, main="Ajuste localmente lineal")
+ff<-c(1,.8,.6,.4,.2)
+for (i in 1:length(ff))
+lines(lowess(t,d,f=ff[i]),col=i+1,lwd=2)
+legend("topright",
+      legend=paste("f = ",ff),
+      col=2:(length(ff)+1),lwd=2)
+```
+
+$~~~$En el gráfico anterior vemos, tal como esperábamos, que a menores valores de *f*, la función que resulta tiene más cambios bruscos (es menos suave). Además de los que podemos observar, hemos probado con valores de *f* superiores a 1, y el ajuste era exactamente el mismo que obteníamos con *f*=1, lo cual tiene sentido porque en este caso implicaría que utiliza todos los datos para hacer la regresión local de cada ventana (y por tanto sólo hay una ventana). De forma similar, también hemos observado que para valores de *f* inferiores a 0.2 (es decir, que cada ventana utilice el menos del 20% de los datos), los ajustes no cambiaban. Pensamos que este valor mínimo al que puede cambiar el ajuste depende de la cantidad de valores de la variable explicativa tengamos, de modo que con más datos, por ejemplo, obtendríamos ajustes diferentes hasta valores de *f* menores a 0.2.
+
+
+$~~~$Con respecto a la búsqueda del ancho de banda óptimo en el ajuste localmente lineal, con la función `lowess` no podemos calcularlo de forma análoga a como lo hemos calculado con `loess` en el ajuste localmente cuadrático, pues ahora con `lowess` sólo tenemos las salidas *x* e *y* correspondientes a los valores ajustados, y no disponemos directamente de los residuos. Sin embargo, podríamos utilizar la función `loess` para realizar el ajuste lineal, indicando que el argumento *degree* sea igual a 1. Otro aspecto a considerar, sería el argumento *family*, que por defecto indica que se realice el ajuste por mínimos cuadrados.
+
+$~~~$A continuación, utilizamos la función `loess` para crear otra función que busque cuál es el ancho de banda (*f*) óptimo, en este caso para el ajuste localmente lineal:
+
+```{r}
+opt1SSE <- function(x){
+  loessMod <- try(loess(d~t,span=x,degree=1,family="symmetric"),silent=T)
+  residuos <- try(loessMod$residuals,silent=T)
+  if(class(residuos)!="try-error") {SSE <- sum(residuos^2)}
+  else {SSE <- 99999}
+  return(SSE)}
+# Buscamos el span óptimo que minimiza SSE, empezando en 0.5
+(optimo1<-optim(par=c(0.5), fn=opt1SSE, method="SANN"))
+```
+
+$~~~$Representamos el ajuste con el *span* óptimo obtenido, que en este caso es de aproximadamente 0.375, con una suma de cuadrados residual de 5.483.
+
+```{r fig.width=12,fig.height=5}
+plot(t,d, main="Ajuste localmente lineal con span óptimo")
+lines(t,predict(loess(d~t,span=optimo1$par,degree=1,family="symmetric")),col=2,lwd=2)
+```
+
+$~~~$Debemos tener en cuanta que aún cambiando los argumentos mencionados, los resultados (utilizando `lowess` y utilizando `loess` con los argumentos correspondientes cambiados) no serán exactamente los mismos. De hecho, todavía hay algunos argumentos que no hemos considerado modificar, y mediante los cuales podríamos obtener todavía resultamos más similares, como por ejemplo determinar (en la función `loess`), *surface="direct"*. Sin embargo, podemos ver numéricamente las diferencias entre ellos y darnos cuenta que sí conseguimos ajustes bastante similares.
+
+$~~~$Entonces, mostramos ahora la diferencia (en valor absoluto) entre ambos ajustes, realizados por ejemplo para el ancho de banda óptimo calculado, y vemos que las diferencias entre los ajustes entre ambas funciones son prácticamente nulas:
+
+```{r}
+metodo1<-lowess(t,d,f=optimo1$par)
+metodo2<-loess(d~t,span=optimo1$par,degree=1,family="symmetric")
+abs(metodo1$y-predict(metodo2))
+```
+
+
+## Suavizado *kernel*
+$~~~$Tal como hemos comentado previamente, una alternativa a la regresión polinomial local es el suavizado con *kernels*. Esta estrategia consiste también en dividir el dominio de interés en intervalos contiguos (ventanas) centrados en puntos de interés ($x$'s), de modo que la función $f(\cdot)$ se crea a partir de la unión de los puntos formados por cada punto de interés y su respectivo valor estimado, $\hat{f}(x)$. Sin embargo, en este caso esos valores estimados corresponden, en cada ventana de suavizado, al promedio ponderado de los valores de $y$ de los puntos que conforman la ventana. Además, esa ponderación viene controlada por la función de pesos, o *Kernel*, $K(\cdot)$, que se elije de forma que se le de más importancia a las observaciones cercanas al punto de interés sobre el que se realiza el ajuste. 
+
+$~~~$En R podemos implementar el suavizado *kernel* con la función `ksmooth`, cuyo argumento *kernel* hace referencia a la función *kernel* como tal que queramos utilizar (por ejemplo, las funciones bicuadrada, caja, Gausiana o la de Epanechnikov); y con el argumento *bandwidth* podemos controlar el suavizado del ajuste, de modo que los *kernels* se escalan para que sus cuartiles sean +/-0.25·*bandwidth*.
+
+```{r fig.width=12,fig.height=5}
+plot(t,d, main="Suavizado Kernel - función Gausiana") 
+hh<-c(8,2,1,.7,.5,.3,.1)
+for (i in 1:length(hh))
+lines(ksmooth(t,d,kernel="normal",bandwidth=hh[i]),col=i+1,lwd=2)
+legend("topright",
+      legend=paste("bandwidth = ",hh),
+      col=2:(length(hh)+1),lwd=2)
+```
+
+$~~~$En la gráfica anterior hemos realizado el suavizado *kernel* con nuestros datos, utilizando la función Gausiana como función de peso. Podemos observar la influencia de elegir distinto ancho de banda de la ventana al probar con distintos valores en el argumento *bandwidth*, y vemos que cuanto menores son los mismos, mayor es el suavizado. Además, en este caso, con distintos valores de *bandwidth* superiores a 2, obtenemos resultados muy similares, esto es, una línea prácticamente horizontal, por lo que pensamos que el valor de *bandwidth* óptimo no ha de ser tan elevado.
+
+$~~~$A continuación, realizamos de nuevo el suavizado *kernel* con los mismos valores de *bandwidth*, pero con la función caja (es decir, $K(x)=1/2$ si $|x|<1$, y 0 en otro caso).
+
+```{r fig.width=12,fig.height=5}
+plot(t,d, main="Suavizado Kernel - función caja")  
+# hh<-c(8,2,1,.7,.5,.3,.1)
+for (i in 1:length(hh))
+lines(ksmooth(t,d,kernel="box",bandwidth=hh[i]),col=i+1,lwd=2)
+legend("topright",
+      legend=paste("bandwidth = ",hh),
+      col=2:(length(hh)+1),lwd=2)
+```
+
+$~~~$Vemos que los resultados son bastante distintos a los obtenidos al utilizar la función Gausiana en cuanto a la forma de cada una de las curvas de ajuste, pues son menos suaves; pero si nos fijamos en cada una de las funciones utilizando ambos *kernels* con el mismo ancho de banda, sí apreciamos similitudes. De hecho, los ajustes utilizando por ejemplo la función Gausiana y la de Epanechnikov deberían ser todavía más similares (aunque la función `ksmooth` no nos permite implementarlo directamente cambiando el argumento correspondiente), de modo que la elección de la función *kernel* no afecta considerablemente en el buen comportamiento de las estimaciones resultantes.
+
+$~~~~$
+
+$~~~$Entre las distintas estrategias que hemos probado, tanto de regresión polinomial local como de suavizado *kernel*, en principio no sabemos cuál realiza un mejor ajuste de los datos.
+
+$~~~$Como a simple vista parece que escogiendo niveles de suavizado similares, los ajustes obtenidos son más suaves al utilizar el suavizado *kernel* con la función Gausiana, pensamos que tal vez con esta estrategia consigamos mejores modelos. Sin embargo, si tuviéramos más datos (en este caso sólo tenemos 19 pares de datos), podríamos utilizar validación cruzada, de modo que ajustando el modelo para una parte de los datos (grupo de entrenamiento) y comparar los datos del grupo test con las predicciones que realizamos con cada modelo, y ver así con cuál tenemos menor error y por tanto cuál consideraríamos un mejor modelo.
+
+
+
+
+

@@ -1,0 +1,413 @@
+---
+title: "Tarea 1; tema 3"
+subtitle: "Modelos aditivos generalizados"
+author: "Zuri Montalar"
+date: "14/5/2020"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE,error = FALSE, comment = "")
+```
+
+```{r include=FALSE}
+setwd("~/BIOESTADÍSTICA máster/IV. Modelización avanzada/Modelos aditivos y suavizado/Sesión5- 4 mayo.MAS/TareaSesión4MAY")
+```
+
+En este trabajo analizaremos la posible interacción entre las familias bacterianas de cierta comunidad a partir de información que proporcionó el análisis de muestras fecales diarias recogidas durante un período de treinta días consecutivos. Para ello, disponemos entonces de datos de series de tiempo de la abundancia relativa de siete familias bacterianas, localizadas en el intestino de un paciente sano, teniendo los casos no detectados en la covariable *otros*.
+
+Haremos modelos aditivos generalizados para cada una de las familias bacterianas, pues no conocemos ninguna relación previa entre las variables respuesta y las explicativas, permitiendo  este enfoque no paramétrico un modelado efectivo de relaciones no lineales. Para ello, recurriremos al paquete *mgcv*.
+
+
+Tal como se propone en los artículos de referencia, aplicaremos el logaritmo sobre todas las variables de abundancia de familias bacterianas, además de considerar como variable respuesta la diferencia de ese logaritmo de abundancia entre un tiempo y el anterior. Para ello, creamos una nueva base de datos (que llamamos *datos.log*) en la que aplicamos esa transformación para todas las familias bacterianas.
+
+```{r message=FALSE}
+# Cargamos los datos
+datos<-readxl::read_excel("IBS.xls")
+datos.log<-data.frame(datos[,1],log(datos[,-1])) # nueva base de datos, 
+                          # con logaritmos de las familias bacterianas
+nombres<-c("Tiempo","Porp","Firm","Rike","Rumi","Clos","Bact","Otros")
+names(datos.log)<-nombres
+#plot(datos.log)
+library(mgcv)
+```
+
+
+También utilizaremos para todas las familias bacterianas el mismo link (*identity*), así como la misma distribución de la variable respuesta en cada uno de los casos (la familia gausiana). Estos son los valores por defecto de la función `gam()`, por lo que no es necesario especificarlo al crear los modelos.
+
+<!-- Con todo ello, por ejemplo el modelo para la familia de bacterias Porphyromonadaceae en principio sería el siguiente: -->
+
+<!-- $$ -->
+
+
+<!-- $$ -->
+
+
+Probaremos a emplear distintas bases de *splines* cambiando el argumento *bs* en la función `s()` que define los términos de suavizado (dentro de la función `gam()`), aunque pensamos que esa elección en principio no debería influir demasiado en los resultados; así como la dimensión de las bases, (con el argumento *k*, también de la función `s()`). Más concretamente, decidimos probar para todas las familias bacterianas, con las bases de *splines* cúbicos, *splines Duchon* y *splines* de regresión *thin plate* (correspondientes a "cr","ds","tp" respectivamente); además de dimensiones de las bases de 4 y de 5, de modo que en principio crearemos 6 modelos para cada una de las familias bacterianas. Compararemos los AIC, GCV y R^2^~ajustado~ de cada uno de ellos (quedarán reflejados en las matrices *calidad.nombreFamilia*) para ver si el cambiar la base y su dimensión influye en la calidad de los modelos. En caso de ser distintos, escogeremos el modelo que consideremos más adecuado e intentaremos mejorarlo reduciendo dimensionalidad, planteándonos el no utilizar algunos de los términos que no sean significativos; en caso de ser iguales, llevaremos a cabo ese mismo procedimiento partiendo del modelo con la base de *splines* cúbicos de 4 dimensiones. Consideraremos que estamos ante un mejor modelo si este tiene unos valores de AIC y GCV inferiores, además de un R^2^~ajustado~ mayor.
+
+Es cierto que del modo planteado, estamos considerando para todas las funciones de suavizado de un mismo modelo, las mismas bases de *splines* así como el mismo número de dimensiones de estas, siendo que podríamos ir variando ambos aspectos para las distintas funciones de suavizado de cada modelo. De hecho, hemos realizado previamente algunas pruebas en las que aleatorizábamos para cada una de las funciones de suavizado tanto la base utilizada como su dimensión (indicando *bs=bases[sample(1:length(bases),1)]*, con *bases=c("cr","ds","tp")*; y *k=sample(4:5,1)* en cada una de las funciones `s()`). Sin embargo, consideramos mucho más esclarecedor el fijar ambos para todas las funciones de suavizado del mismo modelo, para así determinar su posible influencia en cada modelo.
+
+Cuando representemos gráficamente los modelos con la función `plot()`, tendremos que los puntos son los residuos parciales de cada observación (el residuo Pearson) más el término de suavización evaluado en la covariable que indicada, y el eje de ordenadas corresponde al grado efectivo de libertad. Entonces, tendremos que los modelos se ajustan bien a los datos si observamos esos residuos parciales distribuidos uniformemente alrededor de la curva a la que se relacionan.
+
+En cuanto a los gráficos que se obtienen con la función `gam.check()`, buscamos validar el modelo en tanto que los residuos sean normales (observamos el gráfico Q-Q en la parte superior izquierda, así como el histograma en la inferior izquierda) y homocedásticos, pues nos interesará que al aumentar la media, la varianza sea aproximadamente constante (esto podremos estudiarlo en el gráfico superior derecho). Además, nos interesará también que los valores ajustados y los reales tengan una buena relación lineal, la cual quedará (o no) reflejada en el gráfico inferior derecho de esa misma función. 
+
+
+
+## Porphyromonadaceae
+
+```{r}
+modelos.porp<-list()
+bases<-rep(c("cr","ds","tp"),2)
+dim.bases<-rep(4:5,c(3,3))
+calidad.porp<-matrix(ncol=3,nrow=6,dimnames=list(c("cr.4","ds.4","tp.4","cr.5",
+              "ds.5","tp.5"),c("AIC","GCV","R2aj")))
+for (i in 1:6) {
+  modelos.porp[[i]]<-gam(diff(Porp)~s(Porp[1:29],bs=bases[i],
+          k=dim.bases[i])+s(Firm[1:29],bs=bases[i],k=dim.bases[i])+
+          s(Rike[1:29],bs=bases[i],k=dim.bases[i])+s(Rumi[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Clos[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Bact[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Otros[1:29],
+          bs=bases[i],k=dim.bases[i]),data=datos.log)
+  calidad.porp[i,1]<-modelos.porp[[i]]$aic
+  calidad.porp[i,2]<-modelos.porp[[i]]$gcv.ubre
+  calidad.porp[i,3]<-summary(modelos.porp[[i]])$r.sq
+}
+calidad.porp
+```
+
+En el caso de la familia de bacterias Porphyromonadaceae no vemos que se produzcan diferencias entre utilizar una u otra base o su dimensión en las funciones de suavizado. A continuación, vemos qué términos son significativos o no en el modelo con base de *splines* cúbicos de dimensión 4 y realizamos varias pruebas quitando algunos de ellos para conseguir un modelo más adecuado.
+
+```{r}
+summary(modelos.porp[[1]])
+mod.opt.porp<-gam(diff(Porp)~-1+s(Porp[1:29],bs="cr",k=4)+s(Bact[1:29],bs="cr",k=4),
+                  data=datos.log)
+summary(mod.opt.porp)
+```
+
+Con el modelo que hemos llamado *mod.opt.porp* conseguimos menores AIC y GCV que con el modelo completo, así como mayor R^2^~ajustado~, por lo que se trata de un modelo mejor. Sin embargo, no pesamos que se trate de un buen modelo, pues el  R^2^~ajustado~ sigue siendo bastante pequeño (de 0.352 aproximadamente).
+
+```{r}
+plot(mod.opt.porp,residuals=TRUE,pch=20,pages=1)
+```
+
+En la gráfica anterior vemos que el modelo que estamos considerando como el óptimo en este caso, no se ajusta bien a los datos, pues residuos parciales no están distribuidos uniformemente alrededor de la curva a la que se relacionan.
+
+```{r fig.width=12,fig.height=5}
+par(mfrow=c(2,2));gam.check(mod.opt.porp,pages=1);par(mfrow=c(1,1))
+```
+
+En cuanto al análisis de los residuos, tal vez sí podríamos suponer que se dé la homocedasticidad de varianzas (observando el gráfico superior derecho del conjunto de gráficas anterior); pero al observar el histograma hay una larga cola a la derecha que nos hace pensar que los residuos no siguen una distribución Normal.
+
+## Firmicutes
+
+```{r}
+modelos.firm<-list()
+# bases<-rep(c("cr","ds","tp"),2)
+# dim.bases<-rep(4:5,c(3,3))
+calidad.firm<-matrix(ncol=3,nrow=6,dimnames=list(c("cr.4","ds.4","tp.4","cr.5",
+              "ds.5","tp.5"),c("AIC","GCV","R2aj")))
+for (i in 1:6) {
+  modelos.firm[[i]]<-gam(diff(Firm)~s(Porp[1:29],bs=bases[i],
+          k=dim.bases[i])+s(Firm[1:29],bs=bases[i],k=dim.bases[i])+
+          s(Rike[1:29],bs=bases[i],k=dim.bases[i])+s(Rumi[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Clos[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Bact[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Otros[1:29],
+          bs=bases[i],k=dim.bases[i]),data=datos.log)
+  calidad.firm[i,1]<-modelos.firm[[i]]$aic
+  calidad.firm[i,2]<-modelos.firm[[i]]$gcv.ubre
+  calidad.firm[i,3]<-summary(modelos.firm[[i]])$r.sq
+}
+calidad.firm
+```
+
+En el caso de la familia de bacterias Firmicutes, los valores de AIC, GCV y R^2^~ajustado~ obtenidos en los seis modelos son muy similares, siendo las mejores propuestas las que utilizan con 4 dimensiones las bases *splines Duchon* y *splines* de regresión *thin plate*. Decidimos partir de esta última para buscar un mejor modelo.
+
+```{r}
+summary(modelos.firm[[3]])
+mod.opt.firm<-gam(diff(Firm)~-1+s(Porp[1:29],bs="tp",k=4)+s(Firm[1:29],bs="tp",k=4)+
+              s(Clos[1:29],bs="tp",k=4)+s(Bact[1:29],bs="tp",k=4),data=datos.log)
+summary(mod.opt.firm)
+```
+
+Con el modelo que hemos llamado *mod.opt.firm* conseguimos menores AIC y GCV que con el modelo completo, así como mayor R^2^~ajustado~, y por tanto pensamos que estamos ante un modelo mejor. En esta ocasión, conseguimos un R^2^~ajustado~ de 0.535, que tampoco es lo suficientemente elevado como para considerar que es un buen modelo. Esto mismo lo podemos observar también en el siguiente conjunto de gráficos ya que los residuos parciales no parecen distribuirse uniformemente alrededor de la curva con la que se relacionan.
+
+```{r}
+plot(mod.opt.firm,residuals=TRUE,pch=20,pages=1)
+```
+
+
+```{r fig.width=12,fig.height=5}
+par(mfrow=c(2,2));gam.check(mod.opt.firm,pages=1);par(mfrow=c(1,1))
+```
+
+Con respecto al análisis de los residuos, también podríamos suponer que hay homocedasticidad de varianzas. Con el gráfico Q-Q y el histograma no pensamos que sea del todo concluyente la normalidad de los residuos. En el gráfico inferior derecho vemos que sí parece haber cierta tendencia ascendente, de modo que tal vez los valores ajustados y los reales sí tengan una relación lineal, pero no sabemos si es lo suficientemente buena.
+
+## Rikenellaceae
+
+```{r}
+modelos.rike<-list()
+# bases<-rep(c("cr","ds","tp"),2)
+# dim.bases<-rep(4:5,c(3,3))
+calidad.rike<-matrix(ncol=3,nrow=6,dimnames=list(c("cr.4","ds.4","tp.4","cr.5",
+              "ds.5","tp.5"),c("AIC","GCV","R2aj")))
+for (i in 1:6) {
+  modelos.rike[[i]]<-gam(diff(Rike)~s(Porp[1:29],bs=bases[i],
+          k=dim.bases[i])+s(Firm[1:29],bs=bases[i],k=dim.bases[i])+
+          s(Rike[1:29],bs=bases[i],k=dim.bases[i])+s(Rumi[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Clos[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Bact[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Otros[1:29],
+          bs=bases[i],k=dim.bases[i]),data=datos.log)
+  calidad.rike[i,1]<-modelos.rike[[i]]$aic
+  calidad.rike[i,2]<-modelos.rike[[i]]$gcv.ubre
+  calidad.rike[i,3]<-summary(modelos.rike[[i]])$r.sq
+}
+calidad.rike
+```
+
+Trabajando con la familia de bacterias Rikenellaceae también obtenemos valores muy similares de AIC, GCV y de R^2^~ajustado~. El mejor de los 6 modelos probados parece ser el que utilizaba la base de *splines* cúbicos de 5 dimensiones, por lo que partimos de ese modelo completo para buscar uno mejor.
+
+
+```{r}
+summary(modelos.rike[[4]])
+mod.opt.rike<-gam(diff(Rike)~-1+s(Firm[1:29],bs="cr",k=5)+s(Porp[1:29],bs="cr",k=5)+
+              s(Rike[1:29],bs="cr",k=5)+s(Rumi[1:29],bs="cr",k=5)+s(Clos[1:29],
+              bs="cr",k=5),data=datos.log)
+summary(mod.opt.rike)
+```
+
+Con el modelo que hemos llamado *mod.opt.rike* conseguimos menores AIC y GCV que con el modelo completo, así como mayor R^2^~ajustado~, y pensamos entonces que se trata de un mejor modelo. Hemos conseguido un  R^2^~ajustado~ de 0.725, el cual ya sí que nos parece más interesante por ser más cercano a 1.
+
+En el siguiente conjunto de gráficas observamos que los residuos parciales sí parecen estar generalmente distribuidos de manera uniforme alrededor de la curva a la que se relacionan, lo cual nos hace también pensar que tal vez este sí sea un modelo más adecuado.
+
+```{r}
+plot(mod.opt.rike,residuals=TRUE,pch=20,pages=1)
+```
+
+
+```{r fig.width=12,fig.height=5}
+par(mfrow=c(2,2));gam.check(mod.opt.rike,pages=1);par(mfrow=c(1,1))
+```
+
+En cuanto al análisis de los residuos, observando el gráfico superior derecho del conjunto de gráficas anterior pensamos que parece haber homocedasticidad de varianzas. Con el gráfico Q-Q y el histograma no podemos determinar con claridad si los residuos siguen o no una distribución Normal. Tampoco descartamos que se dé una relación lineal entre los valores ajustados y los reales observando la gráfica inferior derecha.
+
+
+## Ruminococcaceae
+```{r}
+modelos.rumi<-list()
+# bases<-rep(c("cr","ds","tp"),2)
+# dim.bases<-rep(4:5,c(3,3))
+calidad.rumi<-matrix(ncol=3,nrow=6,dimnames=list(c("cr.4","ds.4","tp.4","cr.5",
+              "ds.5","tp.5"),c("AIC","GCV","R2aj")))
+for (i in 1:6) {
+  modelos.rumi[[i]]<-gam(diff(Rumi)~s(Porp[1:29],bs=bases[i],
+          k=dim.bases[i])+s(Firm[1:29],bs=bases[i],k=dim.bases[i])+
+          s(Rike[1:29],bs=bases[i],k=dim.bases[i])+s(Rumi[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Clos[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Bact[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Otros[1:29],
+          bs=bases[i],k=dim.bases[i]),data=datos.log)
+  calidad.rumi[i,1]<-modelos.rumi[[i]]$aic
+  calidad.rumi[i,2]<-modelos.rumi[[i]]$gcv.ubre
+  calidad.rumi[i,3]<-summary(modelos.rumi[[i]])$r.sq
+}
+calidad.rumi
+```
+
+Trabajando con la familia de bacterias Ruminococcaceae tenemos que todos los valores de AIC, GCV y R^2^~ajustado~ son muy similares, excepto a los obtenidos con la base de *splines* cúbicos con 5 dimensiones, cuyo modelo parece tener un mejor comportamiento. Partimos entonces de ese para intentar conseguir un modelo todavía mejor.
+
+```{r}
+summary(modelos.rumi[[4]])
+mod.opt.rumi<-gam(diff(Rumi)~-1+s(Firm[1:29],bs="cr",k=5)+s(Porp[1:29],
+     bs="cr",k=5)+s(Rike[1:29],bs="cr",k=5)+s(Rumi[1:29],bs="cr",k=5)
+     +s(Clos[1:29],bs="cr",k=5)+s(Bact[1:29],bs="cr",k=5)+s(Otros[1:29],
+     bs="cr",k=5),data=datos.log)
+summary(mod.opt.rumi)
+```
+
+En esta ocasión, en el modelo completo tenemos que todos los coeficientes son significativos, y sólo conseguimos mejorarlo quitando el intercept. En ese nuevo modelo que llamamos *mod.opt.rumi* obtenemos un R^2^~ajustado~ de 0.875, lo que nos hace pensar que se trata de un buen modelo. Podemos llegar a esa misma conclusión observando los des siguientes conjuntos de gráficas.
+
+```{r fig.width=7,fig.height=7}
+plot(mod.opt.rumi,residuals=TRUE,pch=20,pages=1)
+```
+
+
+```{r fig.width=12,fig.height=5}
+par(mfrow=c(2,2));gam.check(mod.opt.rumi,pages=1);par(mfrow=c(1,1))
+```
+
+Con respecto al análisis de los residuos, observando el gráfico superior derecho del conjunto de gráficas anterior podríamos considerar que hay homocedasticidad de varianzas. Tal como nos ha ocurrido al estudiar las familias bacterianas anteriores, con el gráfico Q-Q y el  histograma no podemos determinar con claridad si los residuos siguen o no una distribución Normal.Sin embargo, sí parece que se dé una relación lineal entre los valores ajustados y los reales observando la gráfica inferior derecha.
+
+
+## Clostridiales
+```{r}
+modelos.clos<-list()
+# bases<-rep(c("cr","ds","tp"),2)
+# dim.bases<-rep(4:5,c(3,3))
+calidad.clos<-matrix(ncol=3,nrow=6,dimnames=list(c("cr.4","ds.4","tp.4","cr.5",
+              "ds.5","tp.5"),c("AIC","GCV","R2aj")))
+for (i in 1:6) {
+  modelos.clos[[i]]<-gam(diff(Clos)~s(Porp[1:29],bs=bases[i],
+          k=dim.bases[i])+s(Firm[1:29],bs=bases[i],k=dim.bases[i])+
+          s(Rike[1:29],bs=bases[i],k=dim.bases[i])+s(Rumi[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Clos[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Bact[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Otros[1:29],
+          bs=bases[i],k=dim.bases[i]),data=datos.log)
+  calidad.clos[i,1]<-modelos.clos[[i]]$aic
+  calidad.clos[i,2]<-modelos.clos[[i]]$gcv.ubre
+  calidad.clos[i,3]<-summary(modelos.clos[[i]])$r.sq
+}
+calidad.clos
+```
+
+Cuando estudiamos cómo afectan las familias bacterianas a la familia Clostridiales, de nuevo tenemos valores muy similares en los seis modelos iniciales de los índices de bondad en los que hemos decidido basarnos para evaluar su calidad. En esta ocasión también obtenemos menores AIC y GCV, así como mayor R^2^~ajustado~ con la base de *splines* cúbicos de dimensión 5, por lo que partiremos del modelo correspondiente e intentaremos mejorarlo.
+
+```{r}
+summary(modelos.clos[[4]])
+mod.opt.clos<-gam(diff(Clos)~-1+s(Firm[1:29],bs="cr",k=5)+s(Porp[1:29],
+    bs="cr",k=5)+s(Rike[1:29],bs="cr",k=5)+s(Clos[1:29],bs="cr",k=5)+
+    s(Bact[1:29],bs="cr",k=5),data=datos.log)
+summary(mod.opt.clos)
+```
+
+Conseguimos mejorar un poco el modelo teniendo *mod.opt.clos* un R^2^~ajustado~ de 0.502, el cual nos indica que no se trata de un ajuste lo suficientemente adecuado. Esto mismo también lo podemos apreciar en el siguiente conjunto de gráficas, pues los puntos, que hacen referencia a los residuos parciales, no se distribuyen como esperaríamos en torno a la curvas con las que se relacionan.
+
+```{r}
+plot(mod.opt.clos,residuals=TRUE,pch=20,pages=1)
+```
+
+
+```{r fig.width=12,fig.height=5}
+par(mfrow=c(2,2));gam.check(mod.opt.clos,pages=1);par(mfrow=c(1,1))
+```
+
+Al analizar los residuos de nuevo tenemos dudas sobre todo acerca de la normalidad de los mismos y de la relación lineal entre los valores ajustados y los reales. Con todo, pensamos que este no es un buen modelo.
+
+## Bacteria
+
+```{r}
+modelos.bact<-list()
+# bases<-rep(c("cr","ds","tp"),2)
+# dim.bases<-rep(4:5,c(3,3))
+calidad.bact<-matrix(ncol=3,nrow=6,dimnames=list(c("cr.4","ds.4","tp.4","cr.5",
+              "ds.5","tp.5"),c("AIC","GCV","R2aj")))
+for (i in 1:6) {
+  modelos.bact[[i]]<-gam(diff(Bact)~s(Porp[1:29],bs=bases[i],
+          k=dim.bases[i])+s(Firm[1:29],bs=bases[i],k=dim.bases[i])+
+          s(Rike[1:29],bs=bases[i],k=dim.bases[i])+s(Rumi[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Clos[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Bact[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Otros[1:29],
+          bs=bases[i],k=dim.bases[i]),data=datos.log)
+  calidad.bact[i,1]<-modelos.bact[[i]]$aic
+  calidad.bact[i,2]<-modelos.bact[[i]]$gcv.ubre
+  calidad.bact[i,3]<-summary(modelos.bact[[i]])$r.sq
+}
+calidad.bact
+```
+
+En cuanto a los seis modelos iniciales creados con la familia que hemos denominado Bacteria, tenemos una vez más que los valores de AIC, GCV y R^2^~ajustado~ son muy parecidos. Esta vez el mejor modelo de entre los planteados es el que utiliza la base de *splines* cúbicos, pero de dimensión 4. Aplicamos de nuevo la misma metodología de ir haciendo pruebas y reduciendo el modelo para conseguir otro modelo mejor.
+
+
+```{r}
+summary(modelos.bact[[1]])
+mod.opt.bact<-gam(diff(Bact)~-1+s(Firm[1:29],bs="cr",k=4)+s(Porp[1:29],
+     bs="cr",k=4)+s(Rike[1:29],bs="cr",k=4)+s(Rumi[1:29],bs="cr",k=4)
+     +s(Clos[1:29],bs="cr",k=4)+s(Bact[1:29],bs="cr",k=4),data=datos.log)
+summary(mod.opt.bact)
+```
+
+Con el modelo *mod.opt.bact* conseguimos un R^2^~ajustado~ de 0.568, por lo que tampoco consideraríamos que se trata de un ajuste adecuado, tal como observamos en los dos siguientes conjuntos de gráficos.
+
+```{r}
+plot(mod.opt.bact,residuals=TRUE,pch=20,pages=1)
+```
+
+
+```{r fig.width=12,fig.height=5}
+par(mfrow=c(2,2));gam.check(mod.opt.bact,pages=1);par(mfrow=c(1,1))
+```
+
+Con respecto al análisis de los residuos, también podríamos suponer que hay homocedasticidad de varianzas. Sin embargo, pensamos que no podemos determinar de forma concluyente que se de la normalidad de los residuos, sobre todo si observamos el gráfico Q-Q. Sí parece que los valores ajustados y los reales tengan cierta relación lineal. Con todo, pensamos que este modelo tampoco es lo suficientemente adecuado.
+
+## Otros
+```{r}
+modelos.otros<-list()
+# bases<-rep(c("cr","ds","tp"),2)
+# dim.bases<-rep(4:5,c(3,3))
+calidad.otros<-matrix(ncol=3,nrow=6,dimnames=list(c("cr.4","ds.4","tp.4","cr.5",
+              "ds.5","tp.5"),c("AIC","GCV","R2aj")))
+for (i in 1:6) {
+  modelos.otros[[i]]<-gam(diff(Otros)~s(Porp[1:29],bs=bases[i],
+          k=dim.bases[i])+s(Firm[1:29],bs=bases[i],k=dim.bases[i])+
+          s(Rike[1:29],bs=bases[i],k=dim.bases[i])+s(Rumi[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Clos[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Bact[1:29],
+          bs=bases[i],k=dim.bases[i])+s(Otros[1:29],
+          bs=bases[i],k=dim.bases[i]),data=datos.log)
+  calidad.otros[i,1]<-modelos.otros[[i]]$aic
+  calidad.otros[i,2]<-modelos.otros[[i]]$gcv.ubre
+  calidad.otros[i,3]<-summary(modelos.otros[[i]])$r.sq
+}
+calidad.otros
+```
+
+Cuando estudiamos los casos no detectados de bacterias, que los agrupamos en *Otros*, tenemos que los AIC, GCV y R^2^~ajustado~ son un poco más dispares entre los seis modelos propuestos inicialmente que en las familias de bacterias que hemos analizado previamente. En este caso, la base con la que mejor modelo obtenemos es de nuevo la de *splines* cúbicos, de dimensión 5. 
+
+
+```{r}
+summary(modelos.otros[[4]])
+mod.opt.otros<-gam(diff(Otros)~-1+s(Firm[1:29],bs="cr",k=5)+s(Porp[1:29],
+     bs="cr",k=5)+s(Rike[1:29],bs="cr",k=5)+s(Rumi[1:29],bs="cr",k=5)
+     +s(Clos[1:29],bs="cr",k=5)+s(Bact[1:29],bs="cr",k=5),data=datos.log)
+summary(mod.opt.otros)
+```
+
+Con el nuevo modelo *mod.opt.otros* el R^2^~ajustado~ es bastante elevado en comparación a los que estamos obteniendo, de 0.865, además de tener que todos los términos sean significativos.
+
+
+```{r}
+plot(mod.opt.otros,residuals=TRUE,pch=20,pages=1)
+```
+
+En los gráficos anteriores vemos que efectivamente los valores de los residuos parciales se distribuyen bastante uniformemente alrededor de la curva a la que se relacionan y que por tanto pensamos que el modelo es adecuado.
+
+```{r fig.width=12,fig.height=5,fig.align="center"}
+par(mfrow=c(2,2));gam.check(mod.opt.otros,pages=1);par(mfrow=c(1,1))
+```
+
+Cuando analizamos los residuos para la validación del modelo, vemos en el conjunto de gráficas anteriores que parecen cumplirse tanto la homocedasticidad de varianzas como la normalidad de los residuos. Además, también pensamos que se cumple la relación lineal entre los valores ajustados y los reales. Con todo ello, podríamos considerar que se trata de un modelo adecuado.
+
+
+--------------------------------------------------------------
+
+## Conclusiones y consideraciones finales
+
+Por un lado, hemos visto que la elección de la base utilizada en las funciones de suavizado, así como su dimensionalidad, no afectaban considerablemente a los resultados. Sin embargo, para la mayoría de familias de bacterias que hemos estudiado, la base de *splines* cúbicos tenía un comportamiento un poco mejor que los *splines Duchon* y los *splines* de regresión *thin plate*. Por otro lado, podríamos destacar que para todas las familias de bacterias hemos mejorado los modelos al no considerar (como mínimo) el intercept, pues en ninguna de las ocasiones obteníamos que fuese significativo.
+
+Si visualizamos una tabla resumen de los índices de bondad para los mejores modelos que hemos obtenido de cada familia familia de bacterias, vemos que en únicamente 3 de las 7 familias obtenemso un R^2^~ajustado~ mayor que 0.7, por lo que por lo general no pensamos estar ante modelos muy adecuados.
+
+```{r}
+mods.opts<-list(mod.opt.porp,mod.opt.firm,mod.opt.rike,mod.opt.rumi,mod.opt.clos,
+     mod.opt.bact,mod.opt.otros) #lista con todos los modelos óptimos
+tabla.resumen<-matrix(ncol=3,nrow=7,dimnames=list(nombres[-1],c("AIC","GCV","R2aj")))
+for (i in 1:7) {
+  tabla.resumen[i,]<-c(mods.opts[[i]]$aic,mods.opts[[i]]$gcv.ubre,
+      summary(mods.opts[[i]])$r.sq)
+}
+tabla.resumen
+```
+
+Recordemos que hemos modelizado de esta forma por seguir la misma metodología que los dos artículos de referencia. Sin embargo, todos los modelos que ajustan en esos artículos tienen un R^2^ bastante pequeño, en todas las ocasiones menores a 0.7, siendo por tanto su validez es bastante cuestionable. Pensamos entonces en cuáles podrían ser alternativas para mejorar estos modelos, como por ejemplo el plantearse la relación entre las variables antes de transformarlas todas a logaritmos, tanto por la interpretabilidad, como por la posibilidad de que hubiera alguna relación lineal entre alguna de las variables y por tanto poder trabajar con modelos mixtos con parte paramétrica y parte no paramétrica; o estudiar si aplicar la diferencia entre tiempos como variable respuesta es la mejor opción.
+
+
+
+
+
+

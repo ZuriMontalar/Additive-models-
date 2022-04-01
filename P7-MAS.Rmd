@@ -1,0 +1,144 @@
+---
+title: "Tarea 1; tema 7"
+subtitle: "Inferencia bayesiana en los modelos GAMM. Introducción al paquete R2BayesX"
+author: "Zuri Montalar Mendoza"
+date: "11/06/2020"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE,error = FALSE, comment = "")
+```
+
+```{r include=FALSE}
+setwd("~/BIOESTADÍSTICA máster/IV. Modelización avanzada/Modelos aditivos y suavizado/Sesión9-1 junio. MAS/TareaSesión1JUNIO")
+set.seed(73)
+```
+
+
+**En el fichero *COVID19CV.xls* se presenta información sobre la expansión de la COVID-19 en la Comunidad Valenciana. Concretamente, se presenta la información del número de casos confirmados, las hospitalizaciones, los ingresos en UCI y fallecidos, por la enfermedad, en el período 17 de marzo - 29 de marzo. Además, las fechas, se agrupan por semana, y se indica si está localizada en fin de semana, o no.**
+
+Primero cargamos y preparamos los datos, así como las librerías que vamos a utilizar.
+
+```{r warning = FALSE,error = FALSE, message=FALSE}
+datos<-readxl::read_excel("COVID19CV.xls")
+names(datos)[1]<-"dia"
+datos$semana<-as.factor(datos$semana)
+datos$finde<-as.factor(datos$finde)
+library(R2BayesX)
+library(coda)
+```
+
+
+## Ejercicio 1
+**Dibuja un boxplot para comparar (en el mismo gráfico) los fallecidos por la COVID19 en cada una de las semanas. A la vista de esta descripción gráfica, ¿consideras que la variable semana debe formar parte de la explicación del número de fallecidos? Justifica tu respuesta.**
+
+
+```{r fig.width=5,fig.height=5,fig.align = "center"}
+boxplot(Muertes~semana,data=datos)
+```
+
+Vemos que hubo menos muertes en la semana 1 que en la semana 2, y que esa diferencia es significativa, ya que el tercer cuartil de la primera semana es inferior al primer cuartil de la segunda semana. Entonces, consideramos que el comportamiento es distinto entre ambas semanas, por lo que sí nos planteamos el considerar la variable *semana* como explicativa.
+
+
+## Ejercicio 2
+
+**A partir de un plot, analiza la posible asociación entre el número de fallecidos y los ingresos en UCI, suaviza los datos con la función `smooth.spline()` para ayudarte en este análisis. ¿A qué conclusión llegas? Justifica tu respuesta.**
+
+```{r fig.width=13,fig.height=6}
+nuevos.datos<-data.frame(UCI=min(datos$UCI):max(datos$UCI))
+plot(datos$UCI,datos$Muertes, main="",pch=16,ylab="fallecidos",xlab="UCI")
+lines(predict(smooth.spline(datos$Muertes~datos$UCI,cv=TRUE),nuevos.datos$UCI),col=2,lwd=2)
+lines(nuevos.datos$UCI,predict(lm(Muertes~UCI,data=datos),newdata=nuevos.datos),col=3,lwd=2)
+lines(nuevos.datos$UCI,predict(lm(Muertes~poly(UCI,2),data=datos),
+                               newdata=nuevos.datos),col=4,lwd=2)
+lines(nuevos.datos$UCI,predict(lm(Muertes~poly(UCI,3),data=datos),
+                               newdata=nuevos.datos),col=5,lwd=2)
+legend("bottomright",col=2:5,cex=0.85,lwd=2,legend=c("splines de suavizado",
+    "ajuste lineal","ajuste cuadrático","ajuste cúbico"))
+```
+
+
+En la gráfica anterior están representados los datos del número de fallecidos según los ingresos en UCI, y le hemos superpuesto los ajustes lineal, cuadrático y cúbico, además del realizado con splines de suavizado. No parece clara la relación entre UCI y fallecidos, por lo que pensamos que será preferible introducir esa variable explicativa suavizada en el modelo.
+
+
+## Ejercicio 3
+
+**Con los dos aparatados anteriores, define un modelo para explicar el número de fallecidos por la COVID19. Estima el modelo con el paquete *R2BayesX*. Detalla la estimación de los parámetros y dibuja en un plot los valores observados vs los valores ajustados.**
+
+
+Según el ejercicio 1, vamos a incluir en el modelo la variable explicativa *semana*, y la vamos a considerar como un factor fijo, pues en este caso nos interesa estudiar únicamente qué ocurre en las dos semanas de las que tenemos datos; y en el ejercicio 2 hemos decidido introducir la variable explicativa *UCI* suavizada.
+
+Como la variable respuesta, *Muertes*, son conteos, indicamos que se distribuye con una Poisson. Ya conociendo los posibles problemas que podríamos tener si en este caso utilizásemos la identidad como función de enlace (como que el error no siga una distribución Normal o que la varianza de la variable respuesta no sea constante), decidimos utilizar el link logaritmo, como es habitual en una regresión Poisson.
+
+En este caso, optamos por inferencia bayesiana en lugar de la frecuentista y, para la implementación del modelo y su análisis, recurrimos al paquete *R2BayesX*. Añadimos como argumento *method="MCMC"* para que utilice el método de simulación Monte Carlo basado en cadenas de Markov. Para introducir el término suavizado en el modelo, usamos la función `sx()`.
+
+```{r, warning=FALSE,error=FALSE,message=FALSE}
+Resul<-bayesx(Muertes~semana+sx(UCI),data=datos,family="poisson",
+               method="MCMC")
+```
+
+```{r}
+summary(Resul)
+```
+
+Hemos obtenido que todos los coeficientes son relevantes, pues los intervalos de credibilidad al 95% para el intercepto, segunda semana y suavizado de *UCI* son, respectivamente, $[2.48, 2.98]$, $[0.18, 0.82]$ y $[0.0006, 0.13]$, y en ninguno de los casos el 0 se encuentra dentro de esos intervalos.
+
+Además, tomando la mediana como estimador puntual para los coeficientes de sus distribuciones a posteriori, tenemos que el coeficiente correspondiente a la semana 2 es positivo, tal como esperábamos, indicando que en esta segunda semana hay más fallecimientos por Covid-19 que en la primera.
+
+A continuación, representamos los valores observados de los fallecimientos frente a los ajustados.
+
+```{r fig.width=13,fig.height=6}
+plot(predict(Resul)$mu,datos$Muertes,pch=20,main="Fallecimientos",
+     xlab="valores ajustados",ylab="valores observados")
+abline(0,1,col=2,lwd=2)
+```
+
+También podemos representar el efecto de la variable suavizada:
+
+```{r fig.width=13,fig.height=6}
+plot(Resul,term="sx(UCI)")
+```
+
+Vemos que hasta aproximadamente 26 personas ingresadas en UCI, cuantas más personas en UCI, más fallecimientos; y que a partir de 26 esa variable ya no parece tener prácticamente efecto en el número de fallecidos. También pensamos que hay que tener en cuanta que estamos haciendo este análisis con únicamente 13 observaciones y que seguramente con más datos los resultados y por tanto las conclusiones a abstraer pueden diferir.
+
+## Ejercicio 4
+
+**Analiza la estimación del parámetro asociado a la variable semana con una trace plot y con el diagnóstico de Geweke. ¿Qué puedes decir de la estacionalidad de la estimación? Justifica tu respuesta.**
+
+Utilizamos la función `samples()` para extraer la muestra generada por la simulación MCMC del parámetro estimado indicado, de modo que al representarla tenemos el *trace plot*, en el que quedan reflejados esos valores en cada una de las iteraciones.
+
+```{r fig.width=13,fig.height=6}
+sem<-samples(Resul,term ="semana",coda=TRUE)
+plot(sem) # trace plot semana
+```
+
+En este caso vemos que se produce una tendencia horizontal lo cual es propio de una cadena de Markov estacionaria.
+
+También podemos representar el gráfico de cuantiles acumulados (*cumulative quantile plot*), que traza la evolución de los cuantiles de la muestra en función del número de iteraciones. Para ello, usaremos la función `cumuplot()` del paquete *coda*.
+
+```{r fig.width=13,fig.height=6}
+cumuplot(sem)
+```
+
+Vemos que se estabiliza al aumentar las iteraciones (aproximadamente a partir de 50 iteraciones ya es bastante estable), lo que también es indicio de que sí hay estacionariedad.
+
+Otra forma de estudiar la estacionariedad puede ser con tests de diagnóstico formal. En este caso vamos a recurrir al diagnóstico de Geweke. Para ello, usaremos la función `geweke.diag()`, también del paquete *coda*. Alternativamente, para realizar este test podemos usar la función `boa.geweke()` del paquete *boa*. Este diagnóstico de convergencia trata de una prueba de igualdad de las medias de la primera y última parte de una cadena de Markov, de modo que si las muestras se extraen de la distribución estacionaria de la cadena, las dos medias son iguales y la estadística de Geweke tiene una distribución normal estándar asintóticamente. Por tanto, siendo el output obtenido la puntuación Z, valores comprendidos en el intervalo [-1.96,1.96] nos empujarían a no rechazar la hipótesis nula de que las medias son iguales, y suponer entonces que las cadenas son estacionarias, que convergen.
+
+
+```{r}
+A1_1chain<-as.mcmc(sem[1:(length(sem)/2),])
+A1_2chain<-as.mcmc(sem[(length(sem)/2+1):length(sem),])
+A1_2_mcmc<-as.mcmc.list(list(A1_1chain,A1_2chain))
+geweke.diag(A1_2_mcmc)
+```
+
+
+Según el diagnóstico Geweke, habiendo obtenido los valores -1.619 y -0.1271, al estar ambos dentro del intervalo [-1.96,1.96] no tenemos evidencia estadística suficiente para rechazar la hipótesis nula y pensamos por tanto que las cadenas convergen, dándose estacionariedad.
+
+
+Otra forma de evaluar la convergencia de las cadenas podría ser mediante el diagnóstico de convergencia de Gelman-Rubin, que podemos calcular en R con la función `gelman.diag()` del paquete *coda*, y también con la función `boa.chain.gandr()` del paquete *boa*. Este diagnóstico se basa en una comparación de las variaciones dentro de la cadena y entre cadenas, de modo que si las cadenas han convergido, ambas estimaciones (la media de la varianza empírica dentro de cada cadena y la varianza empírica de todas las cadenas combinadas) son insesgadas. De lo contrario, el primer método subestimará la varianza, ya que las cadenas individuales no han tenido tiempo de extenderse por toda la distribución estacionaria, y el segundo método sobrestimará la varianza, ya que se eligieron los puntos de partida para que se dispersen en exceso. Por tanto, los valores de este diagnóstico considerablemente mayores que 1 indican falta de convergencia.
+
